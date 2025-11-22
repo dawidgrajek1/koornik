@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="compose.yaml" />
+  </Folder>
+  <Project Path="Koornik.Domain/Koornik.Domain.csproj" />
+</Solution>
