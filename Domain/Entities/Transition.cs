@@ -3,7 +3,7 @@ using Koornik.Domain.Core.Models;
 
 namespace Koornik.Domain.Entities;
 
-public class ZoneTransitionEvent : BaseEntity, IBaseEvent
+public class Transition : BaseEntity, IBaseEventLog
 {
     [Key]
     public Guid Id { get; set; }

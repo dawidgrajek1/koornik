@@ -11,6 +11,6 @@ public interface IBaseRepository<T> where T : BaseEntity
     Task<T?> FirstOrDefault(ISpecification<T?> spec);
     Task<T> Add(T entity);
     Task Update(T entity);
-    Task Delete(T entity);
+    Task Delete(Guid id);
     Task<ulong> Count(ISpecification<T> spec);
 }
