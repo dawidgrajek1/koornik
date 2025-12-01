@@ -9,5 +9,7 @@ public static class ServiceExtensions
     public static void ConfigureApplicationServices(this IServiceCollection services)
     {
         services.AddScoped<IZoneService, ZoneService>();
+        services.AddScoped<IZoneService, ZoneService>();
+        services.AddScoped<ITransitionService, TransitionService>();
     }
 }

@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Koornik.Infrastructure</RootNamespace>
+        <UserSecretsId>efbe203b-83db-443f-afc2-4e098cae1c60</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <Folder Include="Data\Migrations\" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
+      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Koornik.Application\Koornik.Application.csproj" />
+      <ProjectReference Include="..\Koornik.Domain\Koornik.Domain.csproj" />
+    </ItemGroup>
+
+</Project>

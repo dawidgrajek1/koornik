@@ -6,11 +6,11 @@ namespace Koornik.Domain.Core.Repositories;
 public interface IBaseRepository<T> where T : BaseEntity
 {
     Task<T?> GetById(Guid id);
-    Task<IEnumerable<T>> ListAll();
+    Task<List<T>> ListAll();
     Task<IEnumerable<T>> List(ISpecification<T> spec);
-    Task<T?> FirstOrDefault(ISpecification<T?> spec);
+    Task<T?> FirstOrDefault(ISpecification<T> spec);
     Task<T> Add(T entity);
-    Task Update(T entity);
-    Task Delete(Guid id);
-    Task<ulong> Count(ISpecification<T> spec);
+    void Update(T entity);
+    void Delete(T entity);
+    Task<long> Count(ISpecification<T> spec);
 }

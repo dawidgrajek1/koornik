@@ -74,7 +74,7 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger logger) : IZoneService
             return Error.NotFound(description: "Zone not found.");
         }
         
-        await _unitOfWork.Repository<Zone>().Update(zone);
+        _unitOfWork.Repository<Zone>().Update(zone);
         await _unitOfWork.SaveChangesAsync();
 
         return new ZoneDto(zone);
@@ -88,7 +88,12 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger logger) : IZoneService
     
     public async Task DeleteZone(Guid id)
     {
-        await _unitOfWork.Repository<Zone>().Delete(id);
+        var zone = await _unitOfWork.Repository<Zone>().GetById(id);
+        if (zone is null)
+        {
+            return;
+        }
+        _unitOfWork.Repository<Zone>().Delete(zone);
         await _unitOfWork.SaveChangesAsync();
     }
 }

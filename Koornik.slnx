@@ -3,6 +3,7 @@
     <File Path=".gitignore" />
     <File Path="compose.yaml" />
   </Folder>
-  <Project Path="Application/Application.csproj" />
-  <Project Path="Domain/Domain.csproj" />
+  <Project Path="Koornik.Application/Koornik.Application.csproj" />
+  <Project Path="Koornik.Domain/Koornik.Domain.csproj" />
+  <Project Path="Koornik.Infrastructure/Koornik.Infrastructure.csproj" />
 </Solution>

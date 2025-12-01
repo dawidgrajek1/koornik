@@ -15,7 +15,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Domain\Domain.csproj" />
+      <ProjectReference Include="..\Koornik.Domain\Koornik.Domain.csproj" />
     </ItemGroup>
 
 </Project>

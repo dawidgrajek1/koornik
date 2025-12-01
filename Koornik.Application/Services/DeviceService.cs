@@ -91,15 +91,27 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger logger) : IDeviceServ
         device.FrontZoneId = newDevice.FrontZoneId;
         device.BackZoneId = newDevice.BackZoneId;
         
-        await _unitOfWork.Repository<Device>().Update(device);
+        _unitOfWork.Repository<Device>().Update(device);
         await _unitOfWork.SaveChangesAsync();
 
         return new DeviceDto(device);
     }
 
-    public async Task DeleteDevice(Guid id)
+    public async Task DeleteDevice(Guid deviceId)
     {
-        await _unitOfWork.Repository<Device>().Delete(id);
+        if (deviceId == Guid.Empty)
+        {
+            return;
+        }
+        
+        var device = await _unitOfWork.Repository<Device>().GetById(deviceId);
+
+        if (device is null)
+        {
+            return;
+        }
+
+        _unitOfWork.Repository<Device>().Delete(device);
         await _unitOfWork.SaveChangesAsync();
     }
 }

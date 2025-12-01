@@ -9,5 +9,5 @@ public interface IDeviceService
     public Task<ErrorOr<IEnumerable<DeviceDto>>> GetAllDevices();
     public Task <ErrorOr<DeviceDto>> GetDeviceById(Guid id);
     public Task <ErrorOr<DeviceDto>> UpdateDevice(DeviceDto newDevice);
-    public Task DeleteDevice(Guid id);
+    public Task DeleteDevice(Guid deviceId);
 }
