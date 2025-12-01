@@ -6,7 +6,6 @@ using Koornik.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Npgsql.EntityFrameworkCore.PostgreSQL;
 namespace Koornik.Infrastructure;
 
 public static class ServiceExtensions
