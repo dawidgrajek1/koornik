@@ -1,13 +1,14 @@
-using Koornik.Application.Models.DTOs;
+using Koornik.Contracts.Requests;
+using Koornik.Contracts.Responses;
 using ErrorOr;
 
 namespace Koornik.Application.Interfaces;
 
 public interface IDeviceService
 {
-    public Task<ErrorOr<DeviceDto>> CreateDevice(DeviceDto newDevice);
-    public Task<ErrorOr<IEnumerable<DeviceDto>>> GetAllDevices();
-    public Task <ErrorOr<DeviceDto>> GetDeviceById(Guid id);
-    public Task <ErrorOr<DeviceDto>> UpdateDevice(DeviceDto newDevice);
-    public Task DeleteDevice(Guid deviceId);
+    Task<ErrorOr<DeviceResponse>> CreateDevice(CreateDeviceRequest request);
+    Task<ErrorOr<IEnumerable<DeviceResponse>>> GetAllDevices();
+    Task<ErrorOr<DeviceResponse>> GetDeviceById(Guid id);
+    Task<ErrorOr<DeviceResponse>> UpdateDevice(Guid id, UpdateDeviceRequest request);
+    Task<ErrorOr<Deleted>> DeleteDevice(Guid deviceId);
 }

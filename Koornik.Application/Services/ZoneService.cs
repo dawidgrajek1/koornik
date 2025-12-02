@@ -1,27 +1,29 @@
 using ErrorOr;
 using Koornik.Application.Interfaces;
-using Koornik.Application.Models.DTOs;
+using Koornik.Application.Mapping;
+using Koornik.Contracts.Requests;
+using Koornik.Contracts.Responses;
 using Koornik.Domain.Core.Repositories;
 using Koornik.Domain.Entities;
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Koornik.Application.Services;
 
-public class ZoneService(IUnitOfWork unitOfWork, ILogger logger) : IZoneService
+public class ZoneService(IUnitOfWork unitOfWork, ILogger<ZoneService> logger) : IZoneService
 {
     private readonly IUnitOfWork _unitOfWork = unitOfWork;
-    private readonly ILogger _logger = logger;
+    private readonly ILogger<ZoneService> _logger = logger;
 
-    public async Task<ErrorOr<ZoneDto>> CreateZone(ZoneDto newZone)
+    public async Task<ErrorOr<ZoneResponse>> CreateZone(CreateZoneRequest request)
     {
         List<Error> errors = [];
-        
-        if (string.IsNullOrEmpty(newZone.Name))
+
+        if (string.IsNullOrEmpty(request.Name))
         {
             errors.Add(Error.Validation(description: "Zone name should not be empty."));
         }
 
-        if (newZone.Capacity < 1)
+        if (request.Capacity < 1)
         {
             errors.Add(Error.Validation(description: "Zone capacity should not be less than 1."));
         }
@@ -30,70 +32,74 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger logger) : IZoneService
         {
             return errors;
         }
-        
+
         var zone = await _unitOfWork.Repository<Zone>().Add(new Zone
         {
-            Name = newZone.Name,
-            Capacity = newZone.Capacity,
+            Name = request.Name,
+            Capacity = request.Capacity,
         });
-        
-        
-        await _unitOfWork.SaveChangesAsync();
 
-        return new ZoneDto(zone);
+        await _unitOfWork.SaveChangesAsync();
+        return zone.ToResponse();
     }
-    
-    public async Task<ErrorOr<ZoneDto>> GetZoneById(Guid id)
+
+    public async Task<ErrorOr<ZoneResponse>> GetZoneById(Guid id)
     {
         if (id == Guid.Empty)
         {
             return Error.Validation(description: "Zone id should not be empty.");
         }
-        
+
         var zone = await _unitOfWork.Repository<Zone>().GetById(id);
 
         if (zone is null)
         {
             return Error.NotFound(description: "Zone not found.");
         }
-        
-        return new ZoneDto(zone);
+
+        return zone.ToResponse();
     }
 
-    public async Task<ErrorOr<ZoneDto>> UpdateZone(ZoneDto newZone)
+    public async Task<ErrorOr<ZoneResponse>> UpdateZone(Guid id, UpdateZoneRequest request)
     {
-        if (newZone.Id == Guid.Empty)
+        if (id == Guid.Empty)
         {
             return Error.Validation(description: "Zone id should not be empty.");
         }
-        
-        var zone = await _unitOfWork.Repository<Zone>().GetById(newZone.Id);
+
+        var zone = await _unitOfWork.Repository<Zone>().GetById(id);
 
         if (zone is null)
         {
             return Error.NotFound(description: "Zone not found.");
         }
-        
+
+        zone.Name = request.Name;
+        zone.Capacity = request.Capacity;
+
         _unitOfWork.Repository<Zone>().Update(zone);
         await _unitOfWork.SaveChangesAsync();
 
-        return new ZoneDto(zone);
+        return zone.ToResponse();
     }
 
-    public async Task<ErrorOr<IEnumerable<ZoneDto>>> GetAllZones()
+    public async Task<ErrorOr<IEnumerable<ZoneResponse>>> GetAllZones()
     {
         var zones = await _unitOfWork.Repository<Zone>().ListAll();
-        return zones.Select(x => new ZoneDto(x)).ToList();
+        return zones.Select(x => x.ToResponse()).ToList();
     }
-    
-    public async Task DeleteZone(Guid id)
+
+    public async Task<ErrorOr<Deleted>> DeleteZone(Guid id)
     {
         var zone = await _unitOfWork.Repository<Zone>().GetById(id);
         if (zone is null)
         {
-            return;
+            return Result.Deleted;
         }
+
         _unitOfWork.Repository<Zone>().Delete(zone);
         await _unitOfWork.SaveChangesAsync();
+
+        return Result.Deleted;
     }
 }

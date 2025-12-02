@@ -14,6 +14,21 @@
     secrets:
       - db_password
 
+  koornik.api:
+    image: koornik.api
+    build:
+      context: .
+      dockerfile: Koornik.API/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5000
+      ConnectionStrings__KoornikDB: "Host=db;Port=5432;Database=KoornikDB;Username=koornik_user;Password=f!^pIu!3#E&Qag"
+
 volumes:
   db_data:
 

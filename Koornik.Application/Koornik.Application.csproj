@@ -15,6 +15,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Koornik.Contracts\Koornik.Contracts.csproj" />
       <ProjectReference Include="..\Koornik.Domain\Koornik.Domain.csproj" />
     </ItemGroup>
 

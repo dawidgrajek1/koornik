@@ -1,16 +1,15 @@
+using Koornik.Contracts.Requests;
+using Koornik.Contracts.Responses;
 using ErrorOr;
-using Koornik.Application.Models.DTOs;
 
 namespace Koornik.Application.Interfaces;
 
 public interface ITransitionService
 {
-    public Task<ErrorOr<TransitionDto>> CreateTransition(TransitionDto newTransition);
-    public Task<ErrorOr<IEnumerable<TransitionDto>>> GetAllTransitions();
-    public Task<ErrorOr<TransitionDto>> GetTransitionById(Guid id);
-    public Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForZone(Guid zoneId);
-    public Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForZone(Guid zoneId, DateTime start, DateTime end);
-    public Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForDevice(Guid deviceId);
-    public Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForDevice(Guid deviceId, DateTime start, DateTime end);
-    public Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForTimeRange(DateTime start, DateTime end);
+    Task<ErrorOr<TransitionResponse>> CreateTransition(CreateTransitionRequest request);
+    Task<ErrorOr<IEnumerable<TransitionResponse>>> GetAllTransitions();
+    Task<ErrorOr<TransitionResponse>> GetTransitionById(Guid id);
+    Task<ErrorOr<IEnumerable<TransitionResponse>>> GetTransitionsForZone(Guid zoneId, DateTime? start = null, DateTime? end = null);
+    Task<ErrorOr<IEnumerable<TransitionResponse>>> GetTransitionsForDevice(Guid deviceId, DateTime? start = null, DateTime? end = null);
+    Task<ErrorOr<IEnumerable<TransitionResponse>>> GetTransitionsForTimeRange(DateTime start, DateTime end);
 }

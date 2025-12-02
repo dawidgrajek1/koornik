@@ -1,133 +1,130 @@
 using ErrorOr;
 using Koornik.Application.Interfaces;
-using Koornik.Application.Models.DTOs;
+using Koornik.Application.Mapping;
+using Koornik.Contracts.Requests;
+using Koornik.Contracts.Responses;
 using Koornik.Domain.Core.Repositories;
 using Koornik.Domain.Entities;
 using Koornik.Domain.Specifications;
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Koornik.Application.Services;
 
-public class TransitionService(IUnitOfWork unitOfWork, ILogger logger) : ITransitionService
+public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService> logger) : ITransitionService
 {
     private readonly IUnitOfWork _unitOfWork = unitOfWork;
-    private readonly ILogger _logger = logger;
-    
-    public async Task<ErrorOr<TransitionDto>> CreateTransition(TransitionDto newTransition)
+    private readonly ILogger<TransitionService> _logger = logger;
+
+    public async Task<ErrorOr<TransitionResponse>> CreateTransition(CreateTransitionRequest request)
     {
         List<Error> errors = [];
-        
-        if (newTransition.DeviceId == Guid.Empty)
+
+        if (request.DeviceId == Guid.Empty)
         {
             errors.Add(Error.Validation(description: "Device id should not be empty."));
         }
-        
-        if (newTransition.FromZoneId == Guid.Empty)
+
+        if (request.FromZoneId == Guid.Empty)
         {
             errors.Add(Error.Validation(description: "Source zone id should not be empty."));
         }
-        
-        if (newTransition.ToZoneId == Guid.Empty)
+
+        if (request.ToZoneId == Guid.Empty)
         {
             errors.Add(Error.Validation(description: "Destination zone id should not be empty."));
         }
-        
+
         if (errors.Count > 0)
         {
             return errors;
         }
-        
+
         var transition = await _unitOfWork.Repository<Transition>().Add(new Transition
         {
-            DeviceId = newTransition.DeviceId,
-            FromZone = newTransition.FromZoneId,
-            ToZone = newTransition.ToZoneId,
-            CreatedAt = newTransition.CreatedAt,
+            DeviceId = request.DeviceId,
+            FromZone = request.FromZoneId,
+            ToZone = request.ToZoneId,
+            CreatedAt = request.CreatedAt ?? DateTime.UtcNow,
         });
-        
+
         await _unitOfWork.SaveChangesAsync();
-        return new TransitionDto(transition);
+        return transition.ToResponse();
     }
 
-    public async Task<ErrorOr<IEnumerable<TransitionDto>>> GetAllTransitions()
+    public async Task<ErrorOr<IEnumerable<TransitionResponse>>> GetAllTransitions()
     {
         var transitions = await _unitOfWork.Repository<Transition>().ListAll();
-        return transitions.Select(x => new TransitionDto(x)).ToList();
+        return transitions.Select(x => x.ToResponse()).ToList();
     }
 
-    public async Task<ErrorOr<TransitionDto>> GetTransitionById(Guid id)
+    public async Task<ErrorOr<TransitionResponse>> GetTransitionById(Guid id)
     {
         if (id == Guid.Empty)
         {
             return Error.Validation(description: "Transition id should not be empty.");
         }
-        
+
         var transition = await _unitOfWork.Repository<Transition>().GetById(id);
-        
+
         if (transition is null)
         {
             return Error.NotFound(description: "Transition not found.");
         }
-        
-        return new TransitionDto(transition);
+
+        return transition.ToResponse();
     }
 
-    public async Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForZone(Guid zoneId)
+    public async Task<ErrorOr<IEnumerable<TransitionResponse>>> GetTransitionsForZone(Guid zoneId, DateTime? start = null, DateTime? end = null)
     {
         if (zoneId == Guid.Empty)
         {
             return Error.Validation(description: "Zone id should not be empty.");
         }
 
-        var spec = TransitionSpecifications.GetByZoneId(zoneId);
-        var transitions = await _unitOfWork.Repository<Transition>().List(spec);
-        
-        return transitions.Select(x => new TransitionDto(x)).ToList();
-    }
+        IEnumerable<Transition> transitions;
 
-    public async Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForZone(Guid zoneId, DateTime start, DateTime end)
-    {
-        if (zoneId == Guid.Empty)
+        if (start.HasValue && end.HasValue)
         {
-            return Error.Validation(description: "Zone id should not be empty.");
+            var spec = TransitionSpecifications.GetByZoneAndDateRange(zoneId, start.Value, end.Value);
+            transitions = await _unitOfWork.Repository<Transition>().List(spec);
         }
-        var spec = TransitionSpecifications.GetByZoneAndDateRange(zoneId, start, end);
-        var transitions = await _unitOfWork.Repository<Transition>().List(spec);
-        
-        return transitions.Select(x => new TransitionDto(x)).ToList();
+        else
+        {
+            var spec = TransitionSpecifications.GetByZoneId(zoneId);
+            transitions = await _unitOfWork.Repository<Transition>().List(spec);
+        }
+
+        return transitions.Select(x => x.ToResponse()).ToList();
     }
 
-    public async Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForDevice(Guid deviceId)
+    public async Task<ErrorOr<IEnumerable<TransitionResponse>>> GetTransitionsForDevice(Guid deviceId, DateTime? start = null, DateTime? end = null)
     {
         if (deviceId == Guid.Empty)
         {
             return Error.Validation(description: "Device id should not be empty.");
         }
-        
-        var spec = TransitionSpecifications.GetByDeviceId(deviceId);
-        var transitions = await _unitOfWork.Repository<Transition>().List(spec);
-        
-        return transitions.Select(x => new TransitionDto(x)).ToList();
-    }
 
-    public async Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForDevice(Guid deviceId, DateTime start, DateTime end)
-    {
-        if (deviceId == Guid.Empty)
+        IEnumerable<Transition> transitions;
+
+        if (start.HasValue && end.HasValue)
         {
-            return Error.Validation(description: "Device id should not be empty.");
+            var spec = TransitionSpecifications.GetByDeviceAndDateRange(deviceId, start.Value, end.Value);
+            transitions = await _unitOfWork.Repository<Transition>().List(spec);
         }
-        
-        var spec = TransitionSpecifications.GetByDeviceAndDateRange(deviceId, start, end);
-        var transitions = await _unitOfWork.Repository<Transition>().List(spec);
-        
-        return transitions.Select(x => new TransitionDto(x)).ToList();
+        else
+        {
+            var spec = TransitionSpecifications.GetByDeviceId(deviceId);
+            transitions = await _unitOfWork.Repository<Transition>().List(spec);
+        }
+
+        return transitions.Select(x => x.ToResponse()).ToList();
     }
 
-    public async Task<ErrorOr<IEnumerable<TransitionDto>>> GetTransitionsForTimeRange(DateTime start, DateTime end)
+    public async Task<ErrorOr<IEnumerable<TransitionResponse>>> GetTransitionsForTimeRange(DateTime start, DateTime end)
     {
         var spec = TransitionSpecifications.GetByDateRange(start, end);
         var transitions = await _unitOfWork.Repository<Transition>().List(spec);
-        
-        return transitions.Select(x => new TransitionDto(x)).ToList();
+
+        return transitions.Select(x => x.ToResponse()).ToList();
     }
 }
