@@ -35,3 +35,17 @@ volumes:
 secrets:
   db_password:
     file: ./secrets/db_password.txt
+
+services:
+  koornik.web:
+    image: koornik.web
+    build:
+      context: .
+      dockerfile: BlazorApp1/BlazorApp1.Client/Dockerfile
+
+  blazorapp1:
+    image: blazorapp1
+    build:
+      context: .
+      dockerfile: BlazorApp1/BlazorApp1/Dockerfile
+

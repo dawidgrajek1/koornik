@@ -20,6 +20,10 @@ public static class ServiceExtensions
         services.AddScoped(typeof(IBaseRepository<>), typeof(BaseRepository<>));
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ILoggerService, LoggerService>();
+        
+        // Register MQTT service as singleton and hosted service to run broker on startup
+        services.AddSingleton<MqttService>();
+        services.AddHostedService<MqttHostedService>();
     }
     
     public static void MigrateDatabase(this IServiceProvider serviceProvider)
