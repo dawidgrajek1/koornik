@@ -2,6 +2,7 @@
 using Koornik.Application;
 using Koornik.Infrastructure;
 using Serilog;
+using System.Reflection;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -10,6 +11,13 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     var builder = WebApplication.CreateBuilder(args);
+
+    // Load user secrets in Development using the WebApplicationBuilder.Configuration
+    // so secrets are available via builder.Configuration without configuring Host.
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true);
+    }
 
     // Add Serilog
     builder.Host.UseSerilog();
@@ -63,13 +71,24 @@ try
     app.UseRouting();
     app.MapControllers();
 
+    // Map health check endpoint
+    app.MapHealthChecks("/health/ready");
+
     // Migrate database on startup
-    using (var scope = app.Services.CreateScope())
+    try
     {
-        scope.ServiceProvider.MigrateDatabase();
+        using var scope = app.Services.CreateScope();
+        Log.Information("Starting database migration...");
+        await scope.ServiceProvider.MigrateDatabaseAsync();
+    }
+    catch (Exception ex)
+    {
+        Log.Fatal(ex, "Database migration failed. The application cannot start without a working database connection. Shutting down gracefully.");
+        await app.StopAsync();
+        Environment.Exit(1);
     }
 
-    app.Run();
+    await app.RunAsync();
 }
 catch (Exception ex)
 {

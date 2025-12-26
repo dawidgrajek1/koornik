@@ -7,3 +7,7 @@ Secrets
 .idea
 /Koornik.sln.DotSettings.user
 /KoornikSensor/.vscode/extensions.json
+.env
+.env.secrets
+.env.local
+.env.*.local

@@ -5,14 +5,13 @@
     shm_size: 128mb
     ports:
       - "5432:5432"
-    environment:
-      POSTGRES_DB: KoornikDB
-      POSTGRES_USER: koornik_user
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - db_data:/var/lib/postgresql
-    secrets:
-      - db_password
+    env_file:
+      - path: .env
+        required: true
+      - path: .env.secrets
+        required: true
 
   koornik.api:
     image: koornik.api
@@ -24,28 +23,11 @@
       - "5000:5000"
     depends_on:
       - db
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: http://+:5000
-      ConnectionStrings__KoornikDB: "Host=db;Port=5432;Database=KoornikDB;Username=koornik_user;Password=f!^pIu!3#E&Qag"
+    env_file:
+      - path: .env
+        required: true
+      - path: .env.secrets
+        required: true
 
 volumes:
   db_data:
-
-secrets:
-  db_password:
-    file: ./secrets/db_password.txt
-
-services:
-  koornik.web:
-    image: koornik.web
-    build:
-      context: .
-      dockerfile: BlazorApp1/BlazorApp1.Client/Dockerfile
-
-  blazorapp1:
-    image: blazorapp1
-    build:
-      context: .
-      dockerfile: BlazorApp1/BlazorApp1/Dockerfile
-
