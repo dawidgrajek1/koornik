@@ -34,10 +34,6 @@ public static class ServiceExtensions
         // Register health checks
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database");
-
-        // Register MQTT service as singleton and hosted service to run broker on startup
-        services.AddSingleton<MqttService>();
-        services.AddHostedService<MqttHostedService>();
     }
 
     /// <summary>

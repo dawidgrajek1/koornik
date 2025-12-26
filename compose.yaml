@@ -13,6 +13,20 @@
       - path: .env.secrets
         required: true
 
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+    depends_on:
+      - db
+
   koornik.api:
     image: koornik.api
     build:
@@ -23,6 +37,7 @@
       - "5000:5000"
     depends_on:
       - db
+      - mosquitto
     env_file:
       - path: .env
         required: true

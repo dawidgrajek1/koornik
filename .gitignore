@@ -11,3 +11,6 @@ Secrets
 .env.secrets
 .env.local
 .env.*.local
+pwfile
+/mosquitto/data/mosquitto.db
+/mosquitto/log/mosquitto.log
