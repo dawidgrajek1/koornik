@@ -14,6 +14,8 @@ public interface IDeviceApi
 
     [Get("/api/v{version}/devices/{id}")]
     Task<DeviceResponse> GetDeviceById(Guid id, string version = "1");
+    [Get("/api/v{version}/devices/{mac}/")]
+    Task<DeviceResponse> GetDeviceByMac(string mac, string version = "1");
 
     [Put("/api/v{version}/devices/{id}")]
     Task<DeviceResponse> UpdateDevice(Guid id, [Body] UpdateDeviceRequest request, string version = "1");

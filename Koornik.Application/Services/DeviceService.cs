@@ -5,6 +5,7 @@ using Koornik.Contracts.Requests;
 using Koornik.Contracts.Responses;
 using Koornik.Domain.Core.Repositories;
 using Koornik.Domain.Entities;
+using Koornik.Domain.Specifications;
 using Microsoft.Extensions.Logging;
 
 namespace Koornik.Application.Services;
@@ -36,6 +37,11 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
             }
         }
 
+        if (string.IsNullOrEmpty(request.MacAddress))
+        {
+            errors.Add(Error.Validation(description: "MAC address cannot be empty."));
+        }
+
         if (errors.Count > 0)
         {
             return errors;
@@ -45,6 +51,7 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
         {
             Name = request.Name,
             IpAddress = request.IpAddress,
+            MacAddress = request.MacAddress,
             FrontZoneId = request.FrontZoneId,
             BackZoneId = request.BackZoneId,
         });
@@ -76,6 +83,42 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
         return device.ToResponse();
     }
 
+    public async Task<ErrorOr<DeviceResponse>> GetDeviceByMacAddress(string macAddress)
+    {
+        if (string.IsNullOrEmpty(macAddress))
+        {
+            return Error.Validation(description: "MAC address cannot be empty.");
+        }
+        
+        var spec = DeviceSpecifications.GetByMacAddress(macAddress);
+        var device = await _unitOfWork.Repository<Device>().FirstOrDefault(spec);
+        
+        if (device is null)
+        {
+            return Error.NotFound(description: "Device not found.");
+        }
+        
+        return device.ToResponse();
+    }
+
+    public async Task<ErrorOr<DeviceResponse>> GetDeviceByZoneId(Guid zoneId)
+    {
+        if (zoneId == Guid.Empty)
+        {
+            return Error.Validation(description: "Zone id cannot be empty.");
+        }
+        
+        var spec = DeviceSpecifications.GetByZoneId(zoneId);
+        var device = await _unitOfWork.Repository<Device>().FirstOrDefault(spec);
+
+        if (device is null)
+        {
+            return Error.NotFound(description: "Device not found.");
+        }
+        
+        return device.ToResponse();
+    }
+
     public async Task<ErrorOr<DeviceResponse>> UpdateDevice(Guid id, UpdateDeviceRequest request)
     {
         if (id == Guid.Empty)
@@ -92,6 +135,7 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
 
         device.Name = request.Name;
         device.IpAddress = request.IpAddress;
+        device.MacAddress = request.MacAddress;
         device.FrontZoneId = request.FrontZoneId;
         device.BackZoneId = request.BackZoneId;
 

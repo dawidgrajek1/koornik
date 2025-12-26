@@ -39,7 +39,25 @@ public class DeviceController(IDeviceService deviceService) : ControllerBase
         var result = await _deviceService.GetDeviceById(id);
         return result.ToActionResult();
     }
+    
+    [HttpGet("by-mac/{macAddress}", Name = nameof(GetDeviceByMacAddress))]
+    [ProducesResponseType(typeof(DeviceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDeviceByMacAddress(string macAddress)
+    {
+        var result = await _deviceService.GetDeviceByMacAddress(macAddress);
+        return result.ToActionResult();
+    }
 
+    [HttpGet("by-zone/{zoneId:guid}", Name = nameof(GetDeviceByZoneId))]
+    [ProducesResponseType(typeof(DeviceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDeviceByZoneId(Guid zoneId)
+    {
+        var result = await _deviceService.GetDeviceByZoneId(zoneId);
+        return result.ToActionResult();
+    }
+    
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(DeviceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

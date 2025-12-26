@@ -10,6 +10,7 @@ public static class EntityMappings
         Id = device.Id,
         Name = device.Name,
         IpAddress = device.IpAddress,
+        MacAddress =  device.MacAddress,
         FrontZoneId = device.FrontZoneId,
         BackZoneId = device.BackZoneId
     };

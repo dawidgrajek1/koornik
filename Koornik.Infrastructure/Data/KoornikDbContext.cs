@@ -8,6 +8,4 @@ public class KoornikDbContext(DbContextOptions<KoornikDbContext> options) : DbCo
     public DbSet<Zone> Zones { get; set; }
     public DbSet<Transition> Transitions { get; set; }
     public DbSet<Device> Devices { get; set; }
-    
-    
 }
