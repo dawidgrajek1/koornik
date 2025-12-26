@@ -36,10 +36,9 @@ namespace Koornik.API.Controllers
                 totalDuration = report.TotalDuration.ToString()
             };
 
-            if (report.Status == HealthStatus.Healthy)
-                return Ok(response);
-
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, response);
+            return report.Status == HealthStatus.Healthy ?
+                    Ok(response) :
+                    StatusCode(StatusCodes.Status503ServiceUnavailable, response);
         }
     }
 }
