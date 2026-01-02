@@ -1,6 +1,7 @@
 ﻿using Asp.Versioning;
 using Koornik.Application;
 using Koornik.Infrastructure;
+using Koornik.Infrastructure.Hubs;
 using Serilog;
 using System.Reflection;
 
@@ -70,6 +71,9 @@ try
     app.UseSerilogRequestLogging();
     app.UseRouting();
     app.MapControllers();
+
+    // Map SignalR hub for real-time events
+    app.MapHub<KoornikHub>("/hubs/koornik");
 
     // Map health check endpoint
     app.MapHealthChecks("/health/ready");

@@ -14,15 +14,18 @@ namespace Koornik.Infrastructure.Mqtt;
 public class MqttMessageHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IRealTimeNotificationService _notificationService;
     private readonly ILogger<MqttMessageHandler> _logger;
     private readonly MqttOptions _options;
 
     public MqttMessageHandler(
         IServiceScopeFactory scopeFactory,
+        IRealTimeNotificationService notificationService,
         ILogger<MqttMessageHandler> logger,
         IOptions<MqttOptions> options)
     {
         _scopeFactory = scopeFactory;
+        _notificationService = notificationService;
         _logger = logger;
         _options = options.Value;
     }
@@ -125,12 +128,13 @@ public class MqttMessageHandler
         }
 
         // Create the transition with server-side timestamp
+        var timestamp = DateTime.UtcNow;
         var request = new CreateTransitionRequest
         {
             DeviceId = device.Id,
             FromZoneId = fromZoneId,
             ToZoneId = toZoneId,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = timestamp
         };
 
         var result = await transitionService.CreateTransition(request);
@@ -143,9 +147,28 @@ public class MqttMessageHandler
         _logger.LogInformation(
             "Transition recorded: {Direction} on device {DeviceName} ({Mac}) from {FromZone} to {ToZone}",
             transitionPayload.Direction, device.Name, macAddress, fromZoneId, toZoneId);
+
+        // Notify connected clients via SignalR
+        var transitionEvent = new TransitionEvent
+        {
+            TransitionId = result.Value.Id,
+            DeviceId = device.Id,
+            DeviceName = device.Name,
+            MacAddress = macAddress,
+            Direction = transitionPayload.Direction.ToUpperInvariant(),
+            FromZoneId = fromZoneId,
+            ToZoneId = toZoneId,
+            Timestamp = timestamp
+        };
+
+        // Broadcast to all clients and specific device/zone groups
+        await _notificationService.NotifyTransitionAsync(transitionEvent);
+        await _notificationService.NotifyDeviceTransitionAsync(macAddress, transitionEvent);
+        await _notificationService.NotifyZoneEventAsync(fromZoneId, transitionEvent);
+        await _notificationService.NotifyZoneEventAsync(toZoneId, transitionEvent);
     }
 
-    private Task HandleStatusMessage(string macAddress, string payload)
+    private async Task HandleStatusMessage(string macAddress, string payload)
     {
         try
         {
@@ -163,17 +186,27 @@ public class MqttMessageHandler
                     statusPayload.Thresholds is not null
                         ? $" (thresholds: front={statusPayload.Thresholds.Front}, back={statusPayload.Thresholds.Back})"
                         : "");
+
+                // Notify connected clients via SignalR
+                var statusEvent = new DeviceStatusEvent
+                {
+                    MacAddress = macAddress,
+                    State = statusPayload.State,
+                    ThresholdFront = statusPayload.Thresholds?.Front,
+                    ThresholdBack = statusPayload.Thresholds?.Back,
+                    Timestamp = DateTime.UtcNow
+                };
+
+                await _notificationService.NotifyDeviceStatusAsync(statusEvent);
             }
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to parse status payload from {Mac}: {Payload}", macAddress, payload);
         }
-
-        return Task.CompletedTask;
     }
 
-    private Task HandleDistanceMessage(string macAddress, string payload)
+    private async Task HandleDistanceMessage(string macAddress, string payload)
     {
         try
         {
@@ -187,14 +220,23 @@ public class MqttMessageHandler
                 _logger.LogDebug(
                     "Device {Mac} distance: front={Front}mm, back={Back}mm",
                     macAddress, distancePayload.Front, distancePayload.Back);
+
+                // Notify subscribed clients via SignalR (only to device-specific group)
+                var distanceEvent = new DistanceReadingEvent
+                {
+                    MacAddress = macAddress,
+                    FrontDistance = distancePayload.Front,
+                    BackDistance = distancePayload.Back,
+                    Timestamp = DateTime.UtcNow
+                };
+
+                await _notificationService.NotifyDistanceReadingAsync(distanceEvent);
             }
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to parse distance payload from {Mac}: {Payload}", macAddress, payload);
         }
-
-        return Task.CompletedTask;
     }
 
     #region Payload DTOs

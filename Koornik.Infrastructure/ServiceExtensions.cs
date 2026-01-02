@@ -3,6 +3,7 @@ using Koornik.Application.Interfaces;
 using Koornik.Domain.Core.Repositories;
 using Koornik.Infrastructure.Data;
 using Koornik.Infrastructure.HealthChecks;
+using Koornik.Infrastructure.Hubs;
 using Koornik.Infrastructure.Mqtt;
 using Koornik.Infrastructure.Options;
 using Koornik.Infrastructure.Repositories;
@@ -33,6 +34,10 @@ public static class ServiceExtensions
         services.AddScoped(typeof(IBaseRepository<>), typeof(BaseRepository<>));
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ILoggerService, LoggerService>();
+
+        // Configure SignalR
+        services.AddSignalR();
+        services.AddSingleton<IRealTimeNotificationService, RealTimeNotificationService>();
 
         // Configure MQTT
         services.Configure<MqttOptions>(configuration.GetSection(MqttOptions.SectionName));
