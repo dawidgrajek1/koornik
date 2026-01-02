@@ -3,6 +3,9 @@
     <File Path=".gitignore" />
     <File Path="compose.yaml" />
   </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Koornik.Application.Tests/Koornik.Application.Tests.csproj" />
+  </Folder>
   <Project Path="Koornik.API/Koornik.API.csproj" />
   <Project Path="Koornik.Application/Koornik.Application.csproj" />
   <Project Path="Koornik.Contracts/Koornik.Contracts.csproj" />

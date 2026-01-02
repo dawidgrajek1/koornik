@@ -1,0 +1,478 @@
+using FluentAssertions;
+using Koornik.Application.Services;
+using Koornik.Contracts.Requests;
+using Koornik.Domain.Core.Repositories;
+using Koornik.Domain.Core.Specifications;
+using Koornik.Domain.Entities;
+using Microsoft.Extensions.Logging;
+using Moq;
+
+namespace Koornik.Application.Tests;
+
+public class TransitionServiceTests
+{
+    private readonly Mock<IUnitOfWork> _unitOfWork;
+    private readonly Mock<IBaseRepository<Transition>> _transitionRepository;
+    private readonly Mock<ILogger<TransitionService>> _logger;
+
+    public TransitionServiceTests()
+    {
+        _unitOfWork = new Mock<IUnitOfWork>();
+        _transitionRepository = new Mock<IBaseRepository<Transition>>();
+        _logger = new Mock<ILogger<TransitionService>>();
+
+        _unitOfWork.Setup(u => u.Repository<Transition>()).Returns(_transitionRepository.Object);
+    }
+
+    private TransitionService CreateSut() => new(_unitOfWork.Object, _logger.Object);
+
+    #region CreateTransition Tests
+
+    [Fact]
+    public async Task CreateTransition_WithValidRequest_ReturnsTransitionResponse()
+    {
+        // Arrange
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = Guid.NewGuid(),
+            ToZoneId = Guid.NewGuid(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var createdTransition = new Transition
+        {
+            Id = Guid.NewGuid(),
+            DeviceId = request.DeviceId,
+            FromZone = request.FromZoneId,
+            ToZone = request.ToZoneId,
+            CreatedAt = request.CreatedAt.Value
+        };
+
+        _transitionRepository.Setup(r => r.Add(It.IsAny<Transition>())).ReturnsAsync(createdTransition);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.DeviceId.Should().Be(request.DeviceId);
+        result.Value.FromZoneId.Should().Be(request.FromZoneId);
+        result.Value.ToZoneId.Should().Be(request.ToZoneId);
+
+        _transitionRepository.Verify(r => r.Add(It.IsAny<Transition>()), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithoutCreatedAt_UsesCurrentTime()
+    {
+        // Arrange
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = Guid.NewGuid(),
+            ToZoneId = Guid.NewGuid(),
+            CreatedAt = null
+        };
+
+        var createdTransition = new Transition
+        {
+            Id = Guid.NewGuid(),
+            DeviceId = request.DeviceId,
+            FromZone = request.FromZoneId,
+            ToZone = request.ToZoneId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _transitionRepository.Setup(r => r.Add(It.IsAny<Transition>())).ReturnsAsync(createdTransition);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        _transitionRepository.Verify(r => r.Add(It.Is<Transition>(t => t.CreatedAt != default)), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithEmptyDeviceId_ReturnsValidationError()
+    {
+        // Arrange
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.Empty,
+            FromZoneId = Guid.NewGuid(),
+            ToZoneId = Guid.NewGuid()
+        };
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Device id should not be empty.");
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithEmptyFromZoneId_ReturnsValidationError()
+    {
+        // Arrange
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = Guid.Empty,
+            ToZoneId = Guid.NewGuid()
+        };
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Source zone id should not be empty.");
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithEmptyToZoneId_ReturnsValidationError()
+    {
+        // Arrange
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = Guid.NewGuid(),
+            ToZoneId = Guid.Empty
+        };
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Destination zone id should not be empty.");
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithMultipleInvalidFields_ReturnsAllErrors()
+    {
+        // Arrange
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.Empty,
+            FromZoneId = Guid.Empty,
+            ToZoneId = Guid.Empty
+        };
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().HaveCount(3);
+        result.Errors.Should().Contain(e => e.Description == "Device id should not be empty.");
+        result.Errors.Should().Contain(e => e.Description == "Source zone id should not be empty.");
+        result.Errors.Should().Contain(e => e.Description == "Destination zone id should not be empty.");
+    }
+
+    #endregion
+
+    #region GetAllTransitions Tests
+
+    [Fact]
+    public async Task GetAllTransitions_WhenTransitionsExist_ReturnsTransitionList()
+    {
+        // Arrange
+        var transitions = new List<Transition>
+        {
+            new() { Id = Guid.NewGuid(), DeviceId = Guid.NewGuid(), FromZone = Guid.NewGuid(), ToZone = Guid.NewGuid(), CreatedAt = DateTime.UtcNow.AddMinutes(-10) },
+            new() { Id = Guid.NewGuid(), DeviceId = Guid.NewGuid(), FromZone = Guid.NewGuid(), ToZone = Guid.NewGuid(), CreatedAt = DateTime.UtcNow.AddMinutes(-5) }
+        };
+
+        _transitionRepository.Setup(r => r.ListAll()).ReturnsAsync(transitions);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetAllTransitions();
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetAllTransitions_WhenNoTransitions_ReturnsEmptyList()
+    {
+        // Arrange
+        _transitionRepository.Setup(r => r.ListAll()).ReturnsAsync(new List<Transition>());
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetAllTransitions();
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region GetTransitionById Tests
+
+    [Fact]
+    public async Task GetTransitionById_WhenTransitionExists_ReturnsTransition()
+    {
+        // Arrange
+        var transitionId = Guid.NewGuid();
+        var transition = new Transition
+        {
+            Id = transitionId,
+            DeviceId = Guid.NewGuid(),
+            FromZone = Guid.NewGuid(),
+            ToZone = Guid.NewGuid(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _transitionRepository.Setup(r => r.GetById(transitionId)).ReturnsAsync(transition);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionById(transitionId);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Id.Should().Be(transitionId);
+    }
+
+    [Fact]
+    public async Task GetTransitionById_WithEmptyGuid_ReturnsValidationError()
+    {
+        // Arrange
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionById(Guid.Empty);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Transition id should not be empty.");
+    }
+
+    [Fact]
+    public async Task GetTransitionById_WhenTransitionNotFound_ReturnsNotFoundError()
+    {
+        // Arrange
+        var transitionId = Guid.NewGuid();
+        _transitionRepository.Setup(r => r.GetById(transitionId)).ReturnsAsync((Transition?)null);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionById(transitionId);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Transition not found.");
+    }
+
+    #endregion
+
+    #region GetTransitionsForZone Tests
+
+    [Fact]
+    public async Task GetTransitionsForZone_WhenTransitionsExist_ReturnsTransitions()
+    {
+        // Arrange
+        var zoneId = Guid.NewGuid();
+        var transitions = new List<Transition>
+        {
+            new() { Id = Guid.NewGuid(), DeviceId = Guid.NewGuid(), FromZone = zoneId, ToZone = Guid.NewGuid(), CreatedAt = DateTime.UtcNow.AddMinutes(-10) },
+            new() { Id = Guid.NewGuid(), DeviceId = Guid.NewGuid(), FromZone = Guid.NewGuid(), ToZone = zoneId, CreatedAt = DateTime.UtcNow.AddMinutes(-5) }
+        };
+
+        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
+            .ReturnsAsync(transitions);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForZone(zoneId);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetTransitionsForZone_WithEmptyGuid_ReturnsValidationError()
+    {
+        // Arrange
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForZone(Guid.Empty);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Zone id should not be empty.");
+    }
+
+    [Fact]
+    public async Task GetTransitionsForZone_WithDateRange_ReturnsFilteredTransitions()
+    {
+        // Arrange
+        var zoneId = Guid.NewGuid();
+        var startDate = DateTime.UtcNow.AddDays(-1);
+        var endDate = DateTime.UtcNow;
+        var transitions = new List<Transition>
+        {
+            new() { Id = Guid.NewGuid(), DeviceId = Guid.NewGuid(), FromZone = zoneId, ToZone = Guid.NewGuid(), CreatedAt = startDate.AddHours(1) }
+        };
+
+        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
+            .ReturnsAsync(transitions);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForZone(zoneId, startDate, endDate);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().HaveCount(1);
+    }
+
+    #endregion
+
+    #region GetTransitionsForDevice Tests
+
+    [Fact]
+    public async Task GetTransitionsForDevice_WhenTransitionsExist_ReturnsTransitions()
+    {
+        // Arrange
+        var deviceId = Guid.NewGuid();
+        var transitions = new List<Transition>
+        {
+            new() { Id = Guid.NewGuid(), DeviceId = deviceId, FromZone = Guid.NewGuid(), ToZone = Guid.NewGuid(), CreatedAt = DateTime.UtcNow.AddMinutes(-10) },
+            new() { Id = Guid.NewGuid(), DeviceId = deviceId, FromZone = Guid.NewGuid(), ToZone = Guid.NewGuid(), CreatedAt = DateTime.UtcNow.AddMinutes(-5) }
+        };
+
+        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
+            .ReturnsAsync(transitions);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForDevice(deviceId);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetTransitionsForDevice_WithEmptyGuid_ReturnsValidationError()
+    {
+        // Arrange
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForDevice(Guid.Empty);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Device id should not be empty.");
+    }
+
+    [Fact]
+    public async Task GetTransitionsForDevice_WithDateRange_ReturnsFilteredTransitions()
+    {
+        // Arrange
+        var deviceId = Guid.NewGuid();
+        var startDate = DateTime.UtcNow.AddDays(-1);
+        var endDate = DateTime.UtcNow;
+        var transitions = new List<Transition>
+        {
+            new() { Id = Guid.NewGuid(), DeviceId = deviceId, FromZone = Guid.NewGuid(), ToZone = Guid.NewGuid(), CreatedAt = startDate.AddHours(1) }
+        };
+
+        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
+            .ReturnsAsync(transitions);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForDevice(deviceId, startDate, endDate);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().HaveCount(1);
+    }
+
+    #endregion
+
+    #region GetTransitionsForTimeRange Tests
+
+    [Fact]
+    public async Task GetTransitionsForTimeRange_WhenTransitionsExist_ReturnsTransitions()
+    {
+        // Arrange
+        var startDate = DateTime.UtcNow.AddDays(-1);
+        var endDate = DateTime.UtcNow;
+        var transitions = new List<Transition>
+        {
+            new() { Id = Guid.NewGuid(), DeviceId = Guid.NewGuid(), FromZone = Guid.NewGuid(), ToZone = Guid.NewGuid(), CreatedAt = startDate.AddHours(1) },
+            new() { Id = Guid.NewGuid(), DeviceId = Guid.NewGuid(), FromZone = Guid.NewGuid(), ToZone = Guid.NewGuid(), CreatedAt = startDate.AddHours(2) }
+        };
+
+        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
+            .ReturnsAsync(transitions);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForTimeRange(startDate, endDate);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetTransitionsForTimeRange_WhenNoTransitions_ReturnsEmptyList()
+    {
+        // Arrange
+        var startDate = DateTime.UtcNow.AddDays(-1);
+        var endDate = DateTime.UtcNow;
+
+        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
+            .ReturnsAsync(new List<Transition>());
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.GetTransitionsForTimeRange(startDate, endDate);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.Should().BeEmpty();
+    }
+
+    #endregion
+}
