@@ -41,6 +41,9 @@ public static class ServiceExtensions
         services.AddSingleton<IMqttClientService>(sp => sp.GetRequiredService<MqttClientService>());
         services.AddHostedService(sp => sp.GetRequiredService<MqttClientService>());
 
+        // Configure Zone Snapshot Service for hourly state snapshots
+        services.AddHostedService<ZoneSnapshotService>();
+
         // Register health checks
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database");

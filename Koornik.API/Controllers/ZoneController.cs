@@ -57,4 +57,42 @@ public class ZoneController(IZoneService zoneService) : ControllerBase
         var result = await _zoneService.DeleteZone(id);
         return result.ToNoContentActionResult();
     }
+
+    /// <summary>
+    /// Get the current state of a zone (occupancy count calculated from latest snapshot + transitions).
+    /// </summary>
+    [HttpGet("{id:guid}/state")]
+    [ProducesResponseType(typeof(ZoneStateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetZoneState(Guid id)
+    {
+        var result = await _zoneService.GetCurrentState(id);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Get the state of a zone at a specific point in time.
+    /// </summary>
+    [HttpGet("{id:guid}/state/at")]
+    [ProducesResponseType(typeof(ZoneStateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetZoneStateAt(Guid id, [FromQuery] DateTime timestamp)
+    {
+        var result = await _zoneService.GetStateAt(id, timestamp);
+        return result.ToActionResult();
+    }
+
+    /// <summary>
+    /// Get the state history of a zone within a time range (hourly snapshots).
+    /// </summary>
+    [HttpGet("{id:guid}/state/history")]
+    [ProducesResponseType(typeof(ZoneStateHistoryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetZoneStateHistory(Guid id, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate)
+    {
+        var result = await _zoneService.GetStateHistory(id, startDate, endDate);
+        return result.ToActionResult();
+    }
 }

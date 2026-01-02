@@ -91,6 +91,33 @@ namespace Koornik.Infrastructure.Data.Migrations
 
                     b.ToTable("Zones");
                 });
+
+            modelBuilder.Entity("Koornik.Domain.Entities.ZoneStateSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("OccupancyCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ZoneId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ZoneId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_ZoneStateSnapshots_ZoneId_CreatedAt_Desc");
+
+                    b.ToTable("ZoneStateSnapshots");
+                });
 #pragma warning restore 612, 618
         }
     }
