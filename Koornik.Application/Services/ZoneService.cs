@@ -136,6 +136,9 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger<ZoneService> logger) : 
             return Error.Validation(description: "Zone id should not be empty.");
         }
 
+        // Ensure timestamp is UTC for PostgreSQL compatibility
+        timestamp = DateTime.SpecifyKind(timestamp, DateTimeKind.Utc);
+
         var zone = await _unitOfWork.Repository<Zone>().GetById(zoneId);
         if (zone is null)
         {
@@ -165,6 +168,10 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger<ZoneService> logger) : 
         {
             return Error.Validation(description: "Start date must be before end date.");
         }
+
+        // Ensure dates are UTC for PostgreSQL compatibility
+        startDate = DateTime.SpecifyKind(startDate, DateTimeKind.Utc);
+        endDate = DateTime.SpecifyKind(endDate, DateTimeKind.Utc);
 
         var zone = await _unitOfWork.Repository<Zone>().GetById(zoneId);
         if (zone is null)

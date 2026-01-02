@@ -85,7 +85,10 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
 
         if (start.HasValue && end.HasValue)
         {
-            var spec = TransitionSpecifications.GetByZoneAndDateRange(zoneId, start.Value, end.Value);
+            // Ensure dates are UTC for PostgreSQL compatibility
+            var startUtc = DateTime.SpecifyKind(start.Value, DateTimeKind.Utc);
+            var endUtc = DateTime.SpecifyKind(end.Value, DateTimeKind.Utc);
+            var spec = TransitionSpecifications.GetByZoneAndDateRange(zoneId, startUtc, endUtc);
             transitions = await _unitOfWork.Repository<Transition>().List(spec);
         }
         else
@@ -108,7 +111,10 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
 
         if (start.HasValue && end.HasValue)
         {
-            var spec = TransitionSpecifications.GetByDeviceAndDateRange(deviceId, start.Value, end.Value);
+            // Ensure dates are UTC for PostgreSQL compatibility
+            var startUtc = DateTime.SpecifyKind(start.Value, DateTimeKind.Utc);
+            var endUtc = DateTime.SpecifyKind(end.Value, DateTimeKind.Utc);
+            var spec = TransitionSpecifications.GetByDeviceAndDateRange(deviceId, startUtc, endUtc);
             transitions = await _unitOfWork.Repository<Transition>().List(spec);
         }
         else
@@ -122,6 +128,10 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
 
     public async Task<ErrorOr<IEnumerable<TransitionResponse>>> GetTransitionsForTimeRange(DateTime start, DateTime end)
     {
+        // Ensure dates are UTC for PostgreSQL compatibility
+        start = DateTime.SpecifyKind(start, DateTimeKind.Utc);
+        end = DateTime.SpecifyKind(end, DateTimeKind.Utc);
+
         var spec = TransitionSpecifications.GetByDateRange(start, end);
         var transitions = await _unitOfWork.Repository<Transition>().List(spec);
 
