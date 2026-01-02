@@ -19,11 +19,10 @@
 // ==================== CONFIGURATION ====================
 #define AP_SSID "ToF-Setup"
 #define MQTT_PORT 1883
-#define MQTT_TOPIC_DIRECTION "tof/direction"
-#define MQTT_TOPIC_CALIBRATE "tof/calibrate"
-#define MQTT_TOPIC_STATUS "tof/status"
+#define MQTT_TOPIC_PREFIX "koornik"
 
 #define DEFAULT_THRESHOLD 500       // Default detection threshold in mm
+#define DISTANCE_STREAM_INTERVAL 500  // Live distance streaming interval in ms
 #define CALIBRATION_MARGIN 100      // Margin to subtract from calibrated distance
 #define CALIBRATION_SAMPLES 10      // Number of samples for calibration
 #define DETECTION_TIMEOUT 2000      // Timeout for direction detection in ms
@@ -59,14 +58,25 @@ String savedSSID = "";
 String savedPassword = "";
 String savedMqttBroker = "";
 
+// MAC address (without colons) for topic identification
+String deviceMac = "";
+
+// Dynamic MQTT topics (built after WiFi connects)
+String topicTransition = "";
+String topicStatus = "";
+String topicCommand = "";
+String topicDistance = "";
+
 int thresholdFront = DEFAULT_THRESHOLD;
 int thresholdBack = DEFAULT_THRESHOLD;
 
 unsigned long detectionStartTime = 0;
 unsigned long lastMqttAttempt = 0;
 unsigned long lastLedToggle = 0;
+unsigned long lastDistancePublish = 0;
 bool ledState = false;
 bool sensorsInitialized = false;
+bool distanceStreamEnabled = false;
 
 // ==================== HTML PAGE ====================
 const char index_html[] PROGMEM = R"rawliteral(
@@ -387,6 +397,28 @@ void clearPreferences() {
 }
 
 // ==================== WIFI ====================
+String getMacAddressClean() {
+    String mac = WiFi.macAddress();
+    mac.replace(":", "");
+    mac.toUpperCase();
+    return mac;
+}
+
+void buildMqttTopics() {
+    deviceMac = getMacAddressClean();
+    topicTransition = String(MQTT_TOPIC_PREFIX) + "/" + deviceMac + "/transition";
+    topicStatus = String(MQTT_TOPIC_PREFIX) + "/" + deviceMac + "/status";
+    topicCommand = String(MQTT_TOPIC_PREFIX) + "/" + deviceMac + "/command";
+    topicDistance = String(MQTT_TOPIC_PREFIX) + "/" + deviceMac + "/distance";
+    
+    Serial.println("Device MAC: " + deviceMac);
+    Serial.println("Topics configured:");
+    Serial.println("  Transition: " + topicTransition);
+    Serial.println("  Status: " + topicStatus);
+    Serial.println("  Command: " + topicCommand);
+    Serial.println("  Distance: " + topicDistance);
+}
+
 bool connectToWiFi() {
     Serial.println("Connecting to WiFi: " + savedSSID);
     
@@ -414,6 +446,10 @@ bool connectToWiFi() {
     Serial.println("\nWiFi connected!");
     Serial.println("IP address: " + WiFi.localIP().toString());
     digitalWrite(LED_PIN, HIGH);  // Solid ON when connected
+    
+    // Build MQTT topics now that we have MAC address
+    buildMqttTopics();
+    
     return true;
 }
 
@@ -468,7 +504,56 @@ void setupWebServer() {
 void setupMQTT() {
     mqtt.setServer(savedMqttBroker.c_str(), MQTT_PORT);
     mqtt.setCallback(mqttCallback);
+    mqtt.setBufferSize(512);  // Increase buffer for JSON payloads
     reconnectMQTT();
+}
+
+void parseJsonCommand(const String& message) {
+    // Simple JSON parsing for commands
+    // Expected format: {"action":"calibrate"} or {"action":"enableDistance","enabled":true}
+    // or {"action":"updateSettings","payload":{"thresholdFront":400,"thresholdBack":400}}
+    
+    if (message.indexOf("\"calibrate\"") >= 0) {
+        calibrateSensors();
+    }
+    else if (message.indexOf("\"enableDistance\"") >= 0) {
+        distanceStreamEnabled = message.indexOf("\"enabled\":true") >= 0 || 
+                                message.indexOf("\"enabled\": true") >= 0;
+        Serial.printf("Distance streaming %s\n", distanceStreamEnabled ? "enabled" : "disabled");
+    }
+    else if (message.indexOf("\"updateSettings\"") >= 0) {
+        // Parse threshold settings from payload
+        int frontIdx = message.indexOf("\"thresholdFront\":");
+        int backIdx = message.indexOf("\"thresholdBack\":");
+        
+        if (frontIdx >= 0) {
+            int start = frontIdx + 17;
+            int end = message.indexOf(",", start);
+            if (end < 0) end = message.indexOf("}", start);
+            if (end > start) {
+                thresholdFront = message.substring(start, end).toInt();
+                if (thresholdFront < 50) thresholdFront = 50;
+            }
+        }
+        
+        if (backIdx >= 0) {
+            int start = backIdx + 16;
+            int end = message.indexOf(",", start);
+            if (end < 0) end = message.indexOf("}", start);
+            if (end > start) {
+                thresholdBack = message.substring(start, end).toInt();
+                if (thresholdBack < 50) thresholdBack = 50;
+            }
+        }
+        
+        savePreferences();
+        Serial.printf("Settings updated: Front=%d, Back=%d\n", thresholdFront, thresholdBack);
+        
+        // Publish updated status
+        String statusJson = "{\"state\":\"settings_updated\",\"thresholds\":{\"front\":" + 
+                            String(thresholdFront) + ",\"back\":" + String(thresholdBack) + "}}";
+        mqtt.publish(topicStatus.c_str(), statusJson.c_str());
+    }
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -479,8 +564,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     
     Serial.printf("MQTT message [%s]: %s\n", topic, message.c_str());
     
-    if (String(topic) == MQTT_TOPIC_CALIBRATE) {
-        calibrateSensors();
+    if (String(topic) == topicCommand) {
+        parseJsonCommand(message);
     }
 }
 
@@ -493,11 +578,18 @@ void reconnectMQTT() {
     
     Serial.println("Attempting MQTT connection...");
     
-    String clientId = "ToF-" + String(random(0xffff), HEX);
+    String clientId = "ToF-" + deviceMac;
     if (mqtt.connect(clientId.c_str())) {
         Serial.println("MQTT connected");
-        mqtt.subscribe(MQTT_TOPIC_CALIBRATE);
-        mqtt.publish(MQTT_TOPIC_STATUS, "online");
+        
+        // Subscribe to command topic
+        mqtt.subscribe(topicCommand.c_str());
+        Serial.println("Subscribed to: " + topicCommand);
+        
+        // Publish online status as JSON
+        String statusJson = "{\"state\":\"online\",\"thresholds\":{\"front\":" + 
+                            String(thresholdFront) + ",\"back\":" + String(thresholdBack) + "}}";
+        mqtt.publish(topicStatus.c_str(), statusJson.c_str());
     } else {
         Serial.printf("MQTT connection failed, rc=%d\n", mqtt.state());
     }
@@ -533,12 +625,13 @@ void initSensors() {
 void calibrateSensors() {
     if (!sensorsInitialized) {
         Serial.println("Cannot calibrate - sensors not initialized");
-        mqtt.publish(MQTT_TOPIC_STATUS, "calibration_failed:sensors_not_ready");
+        String errorJson = "{\"state\":\"calibration_failed\",\"error\":\"sensors_not_ready\"}";
+        mqtt.publish(topicStatus.c_str(), errorJson.c_str());
         return;
     }
     
     Serial.println("Starting calibration...");
-    mqtt.publish(MQTT_TOPIC_STATUS, "calibrating");
+    mqtt.publish(topicStatus.c_str(), "{\"state\":\"calibrating\"}");
     
     long sumFront = 0;
     long sumBack = 0;
@@ -580,11 +673,13 @@ void calibrateSensors() {
         
         Serial.printf("Calibration complete: Front=%dmm, Back=%dmm\n", thresholdFront, thresholdBack);
         
-        String statusMsg = "calibrated:front=" + String(thresholdFront) + ",back=" + String(thresholdBack);
-        mqtt.publish(MQTT_TOPIC_STATUS, statusMsg.c_str());
+        String statusJson = "{\"state\":\"calibrated\",\"thresholds\":{\"front\":" + 
+                            String(thresholdFront) + ",\"back\":" + String(thresholdBack) + "}}";
+        mqtt.publish(topicStatus.c_str(), statusJson.c_str());
     } else {
         Serial.println("Calibration failed - not enough valid readings");
-        mqtt.publish(MQTT_TOPIC_STATUS, "calibration_failed:invalid_readings");
+        String errorJson = "{\"state\":\"calibration_failed\",\"error\":\"invalid_readings\"}";
+        mqtt.publish(topicStatus.c_str(), errorJson.c_str());
     }
 }
 
@@ -596,11 +691,21 @@ void detectDirection() {
     sensorFront.rangingTest(&measureFront, false);
     sensorBack.rangingTest(&measureBack, false);
     
-    bool frontTriggered = (measureFront.RangeStatus != 4) && (measureFront.RangeMilliMeter < thresholdFront);
-    bool backTriggered = (measureBack.RangeStatus != 4) && (measureBack.RangeMilliMeter < thresholdBack);
+    int distFront = measureFront.RangeMilliMeter;
+    int distBack = measureBack.RangeMilliMeter;
+    
+    bool frontTriggered = (measureFront.RangeStatus != 4) && (distFront < thresholdFront);
+    bool backTriggered = (measureBack.RangeStatus != 4) && (distBack < thresholdBack);
     
     unsigned long now = millis();
     unsigned long elapsed = now - detectionStartTime;
+    
+    // Publish live distance data if enabled
+    if (distanceStreamEnabled && (now - lastDistancePublish >= DISTANCE_STREAM_INTERVAL)) {
+        String distanceJson = "{\"front\":" + String(distFront) + ",\"back\":" + String(distBack) + "}";
+        mqtt.publish(topicDistance.c_str(), distanceJson.c_str());
+        lastDistancePublish = now;
+    }
     
     switch (detectionState) {
         case IDLE:
@@ -620,7 +725,7 @@ void detectDirection() {
             if (backTriggered && elapsed >= MIN_TRIGGER_INTERVAL) {
                 // Front then Back = IN (front to back)
                 Serial.printf("Direction: IN (front to back) - elapsed %lu ms\n", elapsed);
-                mqtt.publish(MQTT_TOPIC_DIRECTION, "IN");
+                mqtt.publish(topicTransition.c_str(), "{\"direction\":\"IN\"}");
                 detectionState = COOLDOWN;
                 detectionStartTime = now;
             } else if (elapsed > DETECTION_TIMEOUT) {
@@ -634,7 +739,7 @@ void detectDirection() {
             if (frontTriggered && elapsed >= MIN_TRIGGER_INTERVAL) {
                 // Back then Front = OUT (back to front)
                 Serial.printf("Direction: OUT (back to front) - elapsed %lu ms\n", elapsed);
-                mqtt.publish(MQTT_TOPIC_DIRECTION, "OUT");
+                mqtt.publish(topicTransition.c_str(), "{\"direction\":\"OUT\"}");
                 detectionState = COOLDOWN;
                 detectionStartTime = now;
             } else if (elapsed > DETECTION_TIMEOUT) {

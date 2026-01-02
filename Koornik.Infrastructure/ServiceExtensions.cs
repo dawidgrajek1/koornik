@@ -1,7 +1,10 @@
 using Koornik.Application.Core.Services;
+using Koornik.Application.Interfaces;
 using Koornik.Domain.Core.Repositories;
 using Koornik.Infrastructure.Data;
 using Koornik.Infrastructure.HealthChecks;
+using Koornik.Infrastructure.Mqtt;
+using Koornik.Infrastructure.Options;
 using Koornik.Infrastructure.Repositories;
 using Koornik.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +33,13 @@ public static class ServiceExtensions
         services.AddScoped(typeof(IBaseRepository<>), typeof(BaseRepository<>));
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ILoggerService, LoggerService>();
+
+        // Configure MQTT
+        services.Configure<MqttOptions>(configuration.GetSection(MqttOptions.SectionName));
+        services.AddSingleton<MqttMessageHandler>();
+        services.AddSingleton<MqttClientService>();
+        services.AddSingleton<IMqttClientService>(sp => sp.GetRequiredService<MqttClientService>());
+        services.AddHostedService(sp => sp.GetRequiredService<MqttClientService>());
 
         // Register health checks
         services.AddHealthChecks()

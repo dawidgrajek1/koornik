@@ -13,9 +13,9 @@
       - path: .env.secrets
         required: true
 
-  mosquitto:
+  Mosquitto:
     image: eclipse-mosquitto:2.0
-    container_name: mosquitto
+    container_name: Mosquitto
     ports:
       - "1883:1883"
       - "9001:9001"
@@ -37,7 +37,7 @@
       - "5000:5000"
     depends_on:
       - db
-      - mosquitto
+      - Mosquitto
     env_file:
       - path: .env
         required: true
