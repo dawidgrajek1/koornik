@@ -592,10 +592,13 @@ void reconnectMQTT() {
         mqtt.subscribe(topicCommand.c_str());
         Serial.println("Subscribed to: " + topicCommand);
         
-        // Publish online status as JSON
+        // Publish online status as JSON (same format as periodic status)
         String statusJson = "{\"state\":\"online\",\"thresholds\":{\"front\":" + 
-                            String(thresholdFront) + ",\"back\":" + String(thresholdBack) + "}}";
+                            String(thresholdFront) + ",\"back\":" + String(thresholdBack) + 
+                            "},\"sensors\":" + (sensorsInitialized ? "true" : "false") +
+                            ",\"rssi\":" + String(WiFi.RSSI()) + "}";
         mqtt.publish(topicStatus.c_str(), statusJson.c_str());
+        lastStatusPublish = millis();  // Reset timer to avoid immediate duplicate
     } else {
         Serial.printf("MQTT connection failed, rc=%d\n", mqtt.state());
     }
@@ -651,15 +654,15 @@ void calibrateSensors() {
         sensorFront.rangingTest(&measureFront, false);
         sensorBack.rangingTest(&measureBack, false);
         
-        if (measureFront.RangeStatus != 4) {
-            sumFront += measureFront.RangeMilliMeter;
-            validFront++;
-        }
+        // Use 999 as max distance if reading is out of range
+        int distFront = (measureFront.RangeStatus != 4) ? measureFront.RangeMilliMeter : 999;
+        int distBack = (measureBack.RangeStatus != 4) ? measureBack.RangeMilliMeter : 999;
         
-        if (measureBack.RangeStatus != 4) {
-            sumBack += measureBack.RangeMilliMeter;
-            validBack++;
-        }
+        sumFront += distFront;
+        validFront++;
+        
+        sumBack += distBack;
+        validBack++;
         
         delay(50);
     }
