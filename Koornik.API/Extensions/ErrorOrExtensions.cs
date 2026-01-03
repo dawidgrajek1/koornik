@@ -35,6 +35,16 @@ public static class ErrorOrExtensions
         return new NoContentResult();
     }
 
+    public static IActionResult ToNoContentActionResult(this ErrorOr<Success> result)
+    {
+        if (result.IsError)
+        {
+            return result.ToErrorActionResult();
+        }
+
+        return new NoContentResult();
+    }
+
     private static IActionResult ToErrorActionResult<T>(this ErrorOr<T> result)
     {
         var firstError = result.FirstError;

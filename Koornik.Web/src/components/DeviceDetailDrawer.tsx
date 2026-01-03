@@ -2,10 +2,11 @@
  * Device detail drawer component showing device info and live distance readings.
  */
 
-import { useEffect, useMemo } from 'react';
-import { Drawer, Descriptions, Badge, Statistic, Row, Col, Typography, Divider, Card } from 'antd';
-import { WifiOutlined, DashboardOutlined, EnvironmentOutlined } from '@ant-design/icons';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Drawer, Descriptions, Badge, Statistic, Row, Col, Typography, Divider, Card, Button, Space, App } from 'antd';
+import { WifiOutlined, DashboardOutlined, EnvironmentOutlined, ToolOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import type { Device, Zone, ZoneState, DeviceStatusEvent, DistanceReadingEvent } from '../types';
+import { calibrateDevice, setDistanceStream } from '../services/api';
 
 const { Text } = Typography;
 
@@ -38,6 +39,36 @@ export function DeviceDetailDrawer({
   onSubscribe,
   onUnsubscribe,
 }: DeviceDetailDrawerProps) {
+  const { message } = App.useApp();
+  const [calibrating, setCalibrating] = useState(false);
+  const [streamLoading, setStreamLoading] = useState(false);
+
+  const handleCalibrate = useCallback(async () => {
+    if (!device) return;
+    setCalibrating(true);
+    try {
+      await calibrateDevice(device.id);
+      message.success(`Calibration command sent to ${device.name || 'device'}`);
+    } catch (error) {
+      message.error(`Failed to calibrate: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setCalibrating(false);
+    }
+  }, [device, message]);
+
+  const handleDisableDistanceStream = useCallback(async () => {
+    if (!device) return;
+    setStreamLoading(true);
+    try {
+      await setDistanceStream(device.id, false);
+      message.success(`Distance streaming disabled for ${device.name || 'device'}`);
+    } catch (error) {
+      message.error(`Failed to disable distance stream: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setStreamLoading(false);
+    }
+  }, [device, message]);
+
   // Create zone name lookup
   const zoneNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -57,22 +88,61 @@ export function DeviceDetailDrawer({
     }
   }, [device?.macAddress, onSubscribe, onUnsubscribe]);
 
+  // Auto-enable distance streaming when drawer opens, disable when closed
+  useEffect(() => {
+    if (device?.id && deviceStatus && !deviceStatus.distanceStreamEnabled) {
+      setDistanceStream(device.id, true).catch(() => {
+        // Silently fail - user can see streaming status in UI
+      });
+    }
+    
+    // Disable streaming when drawer closes
+    const deviceId = device?.id;
+    return () => {
+      if (deviceId) {
+        setDistanceStream(deviceId, false).catch(() => {
+          // Silently fail
+        });
+      }
+    };
+  }, [device?.id]);
+
   // Get zone info (handle null for border devices)
   const frontZone = device?.frontZoneId ? zones.find(z => z.id === device.frontZoneId) : null;
   const backZone = device?.backZoneId ? zones.find(z => z.id === device.backZoneId) : null;
   const frontZoneState = device?.frontZoneId ? zoneStates.get(device.frontZoneId) : null;
   const backZoneState = device?.backZoneId ? zoneStates.get(device.backZoneId) : null;
 
+  // Check if device is offline (no status in last 60 seconds)
+  const isStale = (() => {
+    if (!deviceStatus?.timestamp) return false;
+    const lastSeen = new Date(deviceStatus.timestamp);
+    const now = new Date();
+    return now.getTime() - lastSeen.getTime() > 60000;
+  })();
+
   // Get status info
-  const statusText = deviceStatus?.state || 'Unknown';
-  const statusColor =
-    statusText.toUpperCase() === 'IDLE'
-      ? 'success'
-      : statusText.toUpperCase() === 'DETECTING'
-      ? 'warning'
-      : statusText.toUpperCase() === 'ERROR'
-      ? 'error'
-      : 'default';
+  const statusText = isStale ? 'Offline' : (deviceStatus?.state || 'Unknown');
+  const statusColor = (() => {
+    if (isStale) return '#8c8c8c';
+    const state = statusText.toUpperCase();
+    switch (state) {
+      case 'IDLE':
+      case 'ONLINE':
+      case 'CALIBRATED':
+      case 'SETTINGS_UPDATED':
+        return '#52c41a';
+      case 'DETECTING':
+      case 'CALIBRATING':
+        return '#faad14';
+      case 'ERROR':
+      case 'CALIBRATION_FAILED':
+        return '#ff4d4f';
+      default:
+        return '#8c8c8c';
+    }
+  })();
+  const isDeviceOffline = !deviceStatus || isStale || statusText.toUpperCase() === 'ERROR' || statusText.toUpperCase() === 'CALIBRATION_FAILED' || statusText === 'Unknown';
 
   return (
     <Drawer
@@ -101,9 +171,31 @@ export function DeviceDetailDrawer({
               <Text code>{device.ipAddress || 'N/A'}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="Status">
-              <Badge status={statusColor as 'success' | 'warning' | 'error' | 'default'} text={statusText} />
+              <Badge color={statusColor} text={statusText} />
             </Descriptions.Item>
           </Descriptions>
+
+          {/* Device Actions */}
+          <Space style={{ marginTop: 16, width: '100%' }} direction="vertical">
+            <Button
+              icon={<ToolOutlined />}
+              loading={calibrating}
+              disabled={isDeviceOffline}
+              onClick={handleCalibrate}
+              block
+            >
+              Calibrate Sensors
+            </Button>
+            <Button
+              icon={<ThunderboltOutlined />}
+              loading={streamLoading}
+              disabled={isDeviceOffline}
+              onClick={handleDisableDistanceStream}
+              block
+            >
+              Disable Distance Streaming
+            </Button>
+          </Space>
 
           <Divider>
             <EnvironmentOutlined /> Connected Zones

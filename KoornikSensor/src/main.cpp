@@ -21,7 +21,7 @@
 #define MQTT_PORT 1883
 #define MQTT_TOPIC_PREFIX "koornik"
 
-#define DEFAULT_THRESHOLD 500       // Default detection threshold in mm
+#define DEFAULT_THRESHOLD 1000       // Default detection threshold in mm
 #define DISTANCE_STREAM_INTERVAL 500  // Live distance streaming interval in ms
 #define STATUS_PUBLISH_INTERVAL 10000 // Status publish interval in ms
 #define CALIBRATION_MARGIN 100      // Margin to subtract from calibrated distance
@@ -654,9 +654,9 @@ void calibrateSensors() {
         sensorFront.rangingTest(&measureFront, false);
         sensorBack.rangingTest(&measureBack, false);
         
-        // Use 999 as max distance if reading is out of range
-        int distFront = (measureFront.RangeStatus != 4) ? measureFront.RangeMilliMeter : 999;
-        int distBack = (measureBack.RangeStatus != 4) ? measureBack.RangeMilliMeter : 999;
+        // Use 9999 as max distance if reading is out of range
+        int distFront = (measureFront.RangeStatus != 4) ? measureFront.RangeMilliMeter : 9999;
+        int distBack = (measureBack.RangeStatus != 4) ? measureBack.RangeMilliMeter : 9999;
         
         sumFront += distFront;
         validFront++;
@@ -715,8 +715,9 @@ void detectDirection() {
     sensorFront.rangingTest(&measureFront, false);
     sensorBack.rangingTest(&measureBack, false);
     
-    int distFront = measureFront.RangeMilliMeter;
-    int distBack = measureBack.RangeMilliMeter;
+    // Use 9999 as max distance if reading is out of range
+    int distFront = (measureFront.RangeStatus != 4) ? measureFront.RangeMilliMeter : 9999;
+    int distBack = (measureBack.RangeStatus != 4) ? measureBack.RangeMilliMeter : 9999;
     
     bool frontTriggered = (measureFront.RangeStatus != 4) && (distFront < thresholdFront);
     bool backTriggered = (measureBack.RangeStatus != 4) && (distBack < thresholdBack);

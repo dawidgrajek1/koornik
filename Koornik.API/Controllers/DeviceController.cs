@@ -75,4 +75,30 @@ public class DeviceController(IDeviceService deviceService) : ControllerBase
         var result = await _deviceService.DeleteDevice(id);
         return result.ToNoContentActionResult();
     }
+
+    /// <summary>
+    /// Sends a calibration command to the device via MQTT.
+    /// </summary>
+    [HttpPost("{id:guid}/calibrate")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> CalibrateDevice(Guid id)
+    {
+        var result = await _deviceService.CalibrateDevice(id);
+        return result.ToNoContentActionResult();
+    }
+
+    /// <summary>
+    /// Enables or disables distance streaming for the device via MQTT.
+    /// </summary>
+    [HttpPost("{id:guid}/distance-stream")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> SetDistanceStream(Guid id, [FromBody] SetDistanceStreamRequest request)
+    {
+        var result = await _deviceService.SetDistanceStream(id, request.Enabled);
+        return result.ToNoContentActionResult();
+    }
 }

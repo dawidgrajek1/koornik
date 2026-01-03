@@ -24,6 +24,7 @@ export interface DeviceStatusEvent {
   state: string;
   thresholdFront: number | null;
   thresholdBack: number | null;
+  distanceStreamEnabled: boolean | null;
   timestamp: string;
 }
 

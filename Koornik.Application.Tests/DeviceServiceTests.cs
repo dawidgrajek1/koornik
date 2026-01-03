@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Koornik.Application.Interfaces;
 using Koornik.Application.Services;
 using Koornik.Contracts.Requests;
 using Koornik.Domain.Core.Repositories;
@@ -13,18 +14,20 @@ public class DeviceServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWork;
     private readonly Mock<IBaseRepository<Device>> _deviceRepository;
+    private readonly Mock<IMqttClientService> _mqttClientService;
     private readonly Mock<ILogger<DeviceService>> _logger;
 
     public DeviceServiceTests()
     {
         _unitOfWork = new Mock<IUnitOfWork>();
         _deviceRepository = new Mock<IBaseRepository<Device>>();
+        _mqttClientService = new Mock<IMqttClientService>();
         _logger = new Mock<ILogger<DeviceService>>();
 
         _unitOfWork.Setup(u => u.Repository<Device>()).Returns(_deviceRepository.Object);
     }
 
-    private DeviceService CreateSut() => new(_unitOfWork.Object, _logger.Object);
+    private DeviceService CreateSut() => new(_unitOfWork.Object, _mqttClientService.Object, _logger.Object);
 
     #region CreateDevice Tests
 

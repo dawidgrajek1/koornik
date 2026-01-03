@@ -10,9 +10,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Koornik.Application.Services;
 
-public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger) : IDeviceService
+public class DeviceService(
+    IUnitOfWork unitOfWork,
+    IMqttClientService mqttClientService,
+    ILogger<DeviceService> logger) : IDeviceService
 {
     private readonly IUnitOfWork _unitOfWork = unitOfWork;
+    private readonly IMqttClientService _mqttClientService = mqttClientService;
     private readonly ILogger<DeviceService> _logger = logger;
 
     public async Task<ErrorOr<DeviceResponse>> CreateDevice(CreateDeviceRequest request)
@@ -176,5 +180,78 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
         await _unitOfWork.SaveChangesAsync();
 
         return Result.Deleted;
+    }
+
+    public async Task<ErrorOr<Success>> CalibrateDevice(Guid deviceId)
+    {
+        if (deviceId == Guid.Empty)
+        {
+            return Error.Validation(description: "Device id should not be empty.");
+        }
+
+        var device = await _unitOfWork.Repository<Device>().GetById(deviceId);
+        if (device is null)
+        {
+            return Error.NotFound(description: "Device not found.");
+        }
+
+        if (string.IsNullOrEmpty(device.MacAddress))
+        {
+            return Error.Validation(description: "Device does not have a MAC address configured.");
+        }
+
+        if (!_mqttClientService.IsConnected)
+        {
+            return Error.Failure(description: "MQTT client is not connected.");
+        }
+
+        try
+        {
+            await _mqttClientService.SendCalibrateCommand(device.MacAddress);
+            _logger.LogInformation("Calibration command sent to device {DeviceId} ({MacAddress})", deviceId, device.MacAddress);
+            return Result.Success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send calibration command to device {DeviceId}", deviceId);
+            return Error.Failure(description: "Failed to send calibration command.");
+        }
+    }
+
+    public async Task<ErrorOr<Success>> SetDistanceStream(Guid deviceId, bool enabled)
+    {
+        if (deviceId == Guid.Empty)
+        {
+            return Error.Validation(description: "Device id should not be empty.");
+        }
+
+        var device = await _unitOfWork.Repository<Device>().GetById(deviceId);
+        if (device is null)
+        {
+            return Error.NotFound(description: "Device not found.");
+        }
+
+        if (string.IsNullOrEmpty(device.MacAddress))
+        {
+            return Error.Validation(description: "Device does not have a MAC address configured.");
+        }
+
+        if (!_mqttClientService.IsConnected)
+        {
+            return Error.Failure(description: "MQTT client is not connected.");
+        }
+
+        try
+        {
+            await _mqttClientService.SendEnableDistanceStream(device.MacAddress, enabled);
+            _logger.LogInformation("Distance stream {State} command sent to device {DeviceId} ({MacAddress})", 
+                enabled ? "enable" : "disable", deviceId, device.MacAddress);
+            return Result.Success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send distance stream command to device {DeviceId}", deviceId);
+            return Error.Failure(description: "Failed to send distance stream command.");
+        }
     }
 }

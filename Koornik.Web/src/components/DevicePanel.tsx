@@ -26,24 +26,39 @@ interface DevicePanelProps {
 
 /** Get badge status based on device state */
 function getStatusBadge(status: DeviceStatusEvent | undefined): {
-  status: 'success' | 'warning' | 'error' | 'default';
+  color: string;
   text: string;
 } {
   if (!status) {
-    return { status: 'default', text: 'Unknown' };
+    return { color: '#8c8c8c', text: 'Unknown' };
+  }
+
+  // Check if device is offline (no status in last 60 seconds)
+  if (status.timestamp) {
+    const lastSeen = new Date(status.timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - lastSeen.getTime();
+    if (diffMs > 60000) {
+      return { color: '#8c8c8c', text: 'Offline' };
+    }
   }
 
   const state = status.state.toUpperCase();
   
   switch (state) {
     case 'IDLE':
-      return { status: 'success', text: 'Idle' };
+    case 'ONLINE':
+    case 'CALIBRATED':
+    case 'SETTINGS_UPDATED':
+      return { color: '#52c41a', text: 'Online' };
     case 'DETECTING':
-      return { status: 'warning', text: 'Detecting' };
+    case 'CALIBRATING':
+      return { color: '#faad14', text: state === 'CALIBRATING' ? 'Calibrating' : 'Detecting' };
     case 'ERROR':
-      return { status: 'error', text: 'Error' };
+    case 'CALIBRATION_FAILED':
+      return { color: '#ff4d4f', text: state === 'CALIBRATION_FAILED' ? 'Calibration Failed' : 'Error' };
     default:
-      return { status: 'default', text: state };
+      return { color: '#8c8c8c', text: state };
   }
 }
 
@@ -186,7 +201,7 @@ export function DevicePanel({
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ marginBottom: 4 }}>
-                        <Badge status={badgeInfo.status} text={badgeInfo.text} />
+                        <Badge color={badgeInfo.color} text={badgeInfo.text} />
                       </div>
                       <div>
                         <Text

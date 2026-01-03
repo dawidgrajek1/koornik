@@ -103,6 +103,21 @@ export async function deleteDevice(id: string): Promise<void> {
   });
 }
 
+/** Send calibration command to device */
+export async function calibrateDevice(id: string): Promise<void> {
+  await fetchApi<void>(`/api/v1/devices/${id}/calibrate`, {
+    method: 'POST',
+  });
+}
+
+/** Enable or disable distance streaming for device */
+export async function setDistanceStream(id: string, enabled: boolean): Promise<void> {
+  await fetchApi<void>(`/api/v1/devices/${id}/distance-stream`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 // ============================================================================
 // Zone API
 // ============================================================================

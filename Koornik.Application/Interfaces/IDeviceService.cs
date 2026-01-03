@@ -13,4 +13,14 @@ public interface IDeviceService
     Task<ErrorOr<DeviceResponse>> GetDeviceByZoneId(Guid zoneId);
     Task<ErrorOr<DeviceResponse>> UpdateDevice(Guid id, UpdateDeviceRequest request);
     Task<ErrorOr<Deleted>> DeleteDevice(Guid deviceId);
+    
+    /// <summary>
+    /// Sends a calibration command to the device via MQTT.
+    /// </summary>
+    Task<ErrorOr<Success>> CalibrateDevice(Guid deviceId);
+    
+    /// <summary>
+    /// Enables or disables distance streaming for the device via MQTT.
+    /// </summary>
+    Task<ErrorOr<Success>> SetDistanceStream(Guid deviceId, bool enabled);
 }
