@@ -29,4 +29,9 @@ public interface IRealTimeNotificationService
     /// Notifies clients subscribed to a specific zone about events.
     /// </summary>
     Task NotifyZoneEventAsync(Guid zoneId, TransitionEvent transitionEvent, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Notifies all connected clients about a zone occupancy change.
+    /// </summary>
+    Task NotifyZoneOccupancyChangedAsync(ZoneOccupancyChangedEvent occupancyEvent, CancellationToken cancellationToken = default);
 }

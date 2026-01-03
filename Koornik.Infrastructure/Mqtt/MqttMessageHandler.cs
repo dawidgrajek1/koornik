@@ -75,6 +75,7 @@ public class MqttMessageHandler
         using var scope = _scopeFactory.CreateScope();
         var deviceService = scope.ServiceProvider.GetRequiredService<IDeviceService>();
         var transitionService = scope.ServiceProvider.GetRequiredService<ITransitionService>();
+        var zoneService = scope.ServiceProvider.GetRequiredService<IZoneService>();
 
         // Parse the transition message
         TransitionPayload? transitionPayload;
@@ -166,6 +167,36 @@ public class MqttMessageHandler
         await _notificationService.NotifyDeviceTransitionAsync(macAddress, transitionEvent);
         await _notificationService.NotifyZoneEventAsync(fromZoneId, transitionEvent);
         await _notificationService.NotifyZoneEventAsync(toZoneId, transitionEvent);
+
+        // Fetch updated zones and broadcast occupancy changes
+        var fromZoneResult = await zoneService.GetZoneById(fromZoneId);
+        var toZoneResult = await zoneService.GetZoneById(toZoneId);
+
+        if (!fromZoneResult.IsError)
+        {
+            var fromZone = fromZoneResult.Value;
+            await _notificationService.NotifyZoneOccupancyChangedAsync(new ZoneOccupancyChangedEvent
+            {
+                ZoneId = fromZone.Id,
+                ZoneName = fromZone.Name,
+                CurrentOccupancy = fromZone.CurrentOccupancy,
+                Capacity = fromZone.Capacity,
+                Timestamp = timestamp
+            });
+        }
+
+        if (!toZoneResult.IsError)
+        {
+            var toZone = toZoneResult.Value;
+            await _notificationService.NotifyZoneOccupancyChangedAsync(new ZoneOccupancyChangedEvent
+            {
+                ZoneId = toZone.Id,
+                ZoneName = toZone.Name,
+                CurrentOccupancy = toZone.CurrentOccupancy,
+                Capacity = toZone.Capacity,
+                Timestamp = timestamp
+            });
+        }
     }
 
     private async Task HandleStatusMessage(string macAddress, string payload)

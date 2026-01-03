@@ -26,10 +26,4 @@ public interface IZoneService
     /// Get the state history of a zone within a time range.
     /// </summary>
     Task<ErrorOr<ZoneStateHistoryResponse>> GetStateHistory(Guid zoneId, DateTime startDate, DateTime endDate);
-    
-    /// <summary>
-    /// Calculate the current occupancy count for a zone based on snapshot and transitions.
-    /// Used internally and by the snapshot service.
-    /// </summary>
-    Task<int> CalculateCurrentOccupancy(Guid zoneId);
 }

@@ -38,6 +38,8 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger<ZoneService> logger) : 
         {
             Name = request.Name,
             Capacity = request.Capacity,
+            CurrentOccupancy = 0,
+            GeoJson = request.GeoJson,
         });
 
         await _unitOfWork.SaveChangesAsync();
@@ -77,6 +79,7 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger<ZoneService> logger) : 
 
         zone.Name = request.Name;
         zone.Capacity = request.Capacity;
+        zone.GeoJson = request.GeoJson;
 
         _unitOfWork.Repository<Zone>().Update(zone);
         await _unitOfWork.SaveChangesAsync();
@@ -117,14 +120,12 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger<ZoneService> logger) : 
             return Error.NotFound(description: "Zone not found.");
         }
 
-        var occupancyCount = await CalculateCurrentOccupancy(zoneId);
-
         return new ZoneStateResponse
         {
             ZoneId = zone.Id,
             ZoneName = zone.Name,
             Timestamp = DateTime.UtcNow,
-            OccupancyCount = occupancyCount,
+            OccupancyCount = zone.CurrentOccupancy,
             Capacity = zone.Capacity
         };
     }
@@ -199,11 +200,6 @@ public class ZoneService(IUnitOfWork unitOfWork, ILogger<ZoneService> logger) : 
             EndDate = endDate,
             States = states
         };
-    }
-
-    public async Task<int> CalculateCurrentOccupancy(Guid zoneId)
-    {
-        return await CalculateOccupancyAtTimestamp(zoneId, DateTime.UtcNow);
     }
 
     private async Task<int> CalculateOccupancyAtTimestamp(Guid zoneId, DateTime timestamp)

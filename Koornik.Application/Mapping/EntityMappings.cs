@@ -19,7 +19,9 @@ public static class EntityMappings
     {
         Id = zone.Id,
         Name = zone.Name,
-        Capacity = zone.Capacity
+        Capacity = zone.Capacity,
+        CurrentOccupancy = zone.CurrentOccupancy,
+        GeoJson = zone.GeoJson
     };
 
     public static TransitionResponse ToResponse(this Transition transition) => new()

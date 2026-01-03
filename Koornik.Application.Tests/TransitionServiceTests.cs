@@ -13,15 +13,18 @@ public class TransitionServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWork;
     private readonly Mock<IBaseRepository<Transition>> _transitionRepository;
+    private readonly Mock<IBaseRepository<Zone>> _zoneRepository;
     private readonly Mock<ILogger<TransitionService>> _logger;
 
     public TransitionServiceTests()
     {
         _unitOfWork = new Mock<IUnitOfWork>();
         _transitionRepository = new Mock<IBaseRepository<Transition>>();
+        _zoneRepository = new Mock<IBaseRepository<Zone>>();
         _logger = new Mock<ILogger<TransitionService>>();
 
         _unitOfWork.Setup(u => u.Repository<Transition>()).Returns(_transitionRepository.Object);
+        _unitOfWork.Setup(u => u.Repository<Zone>()).Returns(_zoneRepository.Object);
     }
 
     private TransitionService CreateSut() => new(_unitOfWork.Object, _logger.Object);
@@ -32,13 +35,18 @@ public class TransitionServiceTests
     public async Task CreateTransition_WithValidRequest_ReturnsTransitionResponse()
     {
         // Arrange
+        var fromZoneId = Guid.NewGuid();
+        var toZoneId = Guid.NewGuid();
         var request = new CreateTransitionRequest
         {
             DeviceId = Guid.NewGuid(),
-            FromZoneId = Guid.NewGuid(),
-            ToZoneId = Guid.NewGuid(),
+            FromZoneId = fromZoneId,
+            ToZoneId = toZoneId,
             CreatedAt = DateTime.UtcNow
         };
+
+        var fromZone = new Zone { Id = fromZoneId, Name = "From Zone", Capacity = 100, CurrentOccupancy = 5 };
+        var toZone = new Zone { Id = toZoneId, Name = "To Zone", Capacity = 100, CurrentOccupancy = 10 };
 
         var createdTransition = new Transition
         {
@@ -49,6 +57,8 @@ public class TransitionServiceTests
             CreatedAt = request.CreatedAt.Value
         };
 
+        _zoneRepository.Setup(r => r.GetById(fromZoneId)).ReturnsAsync(fromZone);
+        _zoneRepository.Setup(r => r.GetById(toZoneId)).ReturnsAsync(toZone);
         _transitionRepository.Setup(r => r.Add(It.IsAny<Transition>())).ReturnsAsync(createdTransition);
         _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
 
@@ -63,21 +73,128 @@ public class TransitionServiceTests
         result.Value.FromZoneId.Should().Be(request.FromZoneId);
         result.Value.ToZoneId.Should().Be(request.ToZoneId);
 
+        // Verify occupancy was updated
+        fromZone.CurrentOccupancy.Should().Be(4); // Decremented from 5 to 4
+        toZone.CurrentOccupancy.Should().Be(11);  // Incremented from 10 to 11
+
+        _zoneRepository.Verify(r => r.Update(fromZone), Times.Once);
+        _zoneRepository.Verify(r => r.Update(toZone), Times.Once);
         _transitionRepository.Verify(r => r.Add(It.IsAny<Transition>()), Times.Once);
         _unitOfWork.Verify(u => u.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithValidRequest_DoesNotDecrementBelowZero()
+    {
+        // Arrange
+        var fromZoneId = Guid.NewGuid();
+        var toZoneId = Guid.NewGuid();
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = fromZoneId,
+            ToZoneId = toZoneId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var fromZone = new Zone { Id = fromZoneId, Name = "From Zone", Capacity = 100, CurrentOccupancy = 0 };
+        var toZone = new Zone { Id = toZoneId, Name = "To Zone", Capacity = 100, CurrentOccupancy = 10 };
+
+        var createdTransition = new Transition
+        {
+            Id = Guid.NewGuid(),
+            DeviceId = request.DeviceId,
+            FromZone = request.FromZoneId,
+            ToZone = request.ToZoneId,
+            CreatedAt = request.CreatedAt.Value
+        };
+
+        _zoneRepository.Setup(r => r.GetById(fromZoneId)).ReturnsAsync(fromZone);
+        _zoneRepository.Setup(r => r.GetById(toZoneId)).ReturnsAsync(toZone);
+        _transitionRepository.Setup(r => r.Add(It.IsAny<Transition>())).ReturnsAsync(createdTransition);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        fromZone.CurrentOccupancy.Should().Be(0); // Should stay at 0, not go negative
+        toZone.CurrentOccupancy.Should().Be(11);
+    }
+
+    [Fact]
+    public async Task CreateTransition_WhenFromZoneNotFound_ReturnsNotFoundError()
+    {
+        // Arrange
+        var fromZoneId = Guid.NewGuid();
+        var toZoneId = Guid.NewGuid();
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = fromZoneId,
+            ToZoneId = toZoneId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _zoneRepository.Setup(r => r.GetById(fromZoneId)).ReturnsAsync((Zone?)null);
+        _zoneRepository.Setup(r => r.GetById(toZoneId)).ReturnsAsync(new Zone { Id = toZoneId, Name = "To Zone", Capacity = 100 });
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Source zone not found.");
+    }
+
+    [Fact]
+    public async Task CreateTransition_WhenToZoneNotFound_ReturnsNotFoundError()
+    {
+        // Arrange
+        var fromZoneId = Guid.NewGuid();
+        var toZoneId = Guid.NewGuid();
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = fromZoneId,
+            ToZoneId = toZoneId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _zoneRepository.Setup(r => r.GetById(fromZoneId)).ReturnsAsync(new Zone { Id = fromZoneId, Name = "From Zone", Capacity = 100 });
+        _zoneRepository.Setup(r => r.GetById(toZoneId)).ReturnsAsync((Zone?)null);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "Destination zone not found.");
     }
 
     [Fact]
     public async Task CreateTransition_WithoutCreatedAt_UsesCurrentTime()
     {
         // Arrange
+        var fromZoneId = Guid.NewGuid();
+        var toZoneId = Guid.NewGuid();
         var request = new CreateTransitionRequest
         {
             DeviceId = Guid.NewGuid(),
-            FromZoneId = Guid.NewGuid(),
-            ToZoneId = Guid.NewGuid(),
+            FromZoneId = fromZoneId,
+            ToZoneId = toZoneId,
             CreatedAt = null
         };
+
+        var fromZone = new Zone { Id = fromZoneId, Name = "From Zone", Capacity = 100, CurrentOccupancy = 5 };
+        var toZone = new Zone { Id = toZoneId, Name = "To Zone", Capacity = 100, CurrentOccupancy = 10 };
 
         var createdTransition = new Transition
         {
@@ -88,6 +205,8 @@ public class TransitionServiceTests
             CreatedAt = DateTime.UtcNow
         };
 
+        _zoneRepository.Setup(r => r.GetById(fromZoneId)).ReturnsAsync(fromZone);
+        _zoneRepository.Setup(r => r.GetById(toZoneId)).ReturnsAsync(toZone);
         _transitionRepository.Setup(r => r.Add(It.IsAny<Transition>())).ReturnsAsync(createdTransition);
         _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
 

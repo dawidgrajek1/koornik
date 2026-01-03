@@ -41,14 +41,17 @@ public class ZoneServiceTests
         var request = new CreateZoneRequest
         {
             Name = "Test Zone",
-            Capacity = 100
+            Capacity = 100,
+            GeoJson = "{\"type\":\"Polygon\",\"coordinates\":[[]]}"
         };
 
         var createdZone = new Zone
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
-            Capacity = request.Capacity
+            Capacity = request.Capacity,
+            CurrentOccupancy = 0,
+            GeoJson = request.GeoJson
         };
 
         _zoneRepository.Setup(r => r.Add(It.IsAny<Zone>())).ReturnsAsync(createdZone);
@@ -63,9 +66,44 @@ public class ZoneServiceTests
         result.IsError.Should().BeFalse();
         result.Value.Name.Should().Be(request.Name);
         result.Value.Capacity.Should().Be(request.Capacity);
+        result.Value.CurrentOccupancy.Should().Be(0);
+        result.Value.GeoJson.Should().Be(request.GeoJson);
 
         _zoneRepository.Verify(r => r.Add(It.IsAny<Zone>()), Times.Once);
         _unitOfWork.Verify(u => u.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateZone_WithoutGeoJson_ReturnsZoneResponseWithNullGeoJson()
+    {
+        // Arrange
+        var request = new CreateZoneRequest
+        {
+            Name = "Test Zone",
+            Capacity = 100,
+            GeoJson = null
+        };
+
+        var createdZone = new Zone
+        {
+            Id = Guid.NewGuid(),
+            Name = request.Name,
+            Capacity = request.Capacity,
+            CurrentOccupancy = 0,
+            GeoJson = null
+        };
+
+        _zoneRepository.Setup(r => r.Add(It.IsAny<Zone>())).ReturnsAsync(createdZone);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateZone(request);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.GeoJson.Should().BeNull();
     }
 
     [Fact]
@@ -163,7 +201,9 @@ public class ZoneServiceTests
         {
             Id = zoneId,
             Name = "Test Zone",
-            Capacity = 100
+            Capacity = 100,
+            CurrentOccupancy = 25,
+            GeoJson = "{\"type\":\"Polygon\"}"
         };
 
         _zoneRepository.Setup(r => r.GetById(zoneId)).ReturnsAsync(zone);
@@ -178,6 +218,8 @@ public class ZoneServiceTests
         result.Value.Id.Should().Be(zoneId);
         result.Value.Name.Should().Be("Test Zone");
         result.Value.Capacity.Should().Be(100);
+        result.Value.CurrentOccupancy.Should().Be(25);
+        result.Value.GeoJson.Should().Be("{\"type\":\"Polygon\"}");
     }
 
     [Fact]
@@ -267,14 +309,17 @@ public class ZoneServiceTests
         {
             Id = zoneId,
             Name = "Old Name",
-            Capacity = 50
+            Capacity = 50,
+            CurrentOccupancy = 10,
+            GeoJson = null
         };
 
         var updateRequest = new UpdateZoneRequest
         {
             Id = zoneId,
             Name = "New Name",
-            Capacity = 100
+            Capacity = 100,
+            GeoJson = "{\"type\":\"Polygon\",\"coordinates\":[[]]}"
         };
 
         _zoneRepository.Setup(r => r.GetById(zoneId)).ReturnsAsync(existingZone);
@@ -289,6 +334,8 @@ public class ZoneServiceTests
         result.IsError.Should().BeFalse();
         result.Value.Name.Should().Be("New Name");
         result.Value.Capacity.Should().Be(100);
+        result.Value.CurrentOccupancy.Should().Be(10); // Should remain unchanged
+        result.Value.GeoJson.Should().Be("{\"type\":\"Polygon\",\"coordinates\":[[]]}");
 
         _zoneRepository.Verify(r => r.Update(It.IsAny<Zone>()), Times.Once);
         _unitOfWork.Verify(u => u.SaveChangesAsync(), Times.Once);
@@ -451,30 +498,19 @@ public class ZoneServiceTests
     }
 
     [Fact]
-    public async Task GetCurrentState_WithTransitions_CalculatesCorrectOccupancy()
+    public async Task GetCurrentState_ReturnsStoredOccupancy()
     {
         // Arrange
         var zoneId = Guid.NewGuid();
-        var otherZoneId = Guid.NewGuid();
         var zone = new Zone
         {
             Id = zoneId,
             Name = "Test Zone",
-            Capacity = 100
-        };
-
-        var transitions = new List<Transition>
-        {
-            new() { Id = Guid.NewGuid(), ToZone = zoneId, FromZone = otherZoneId, CreatedAt = DateTime.UtcNow.AddMinutes(-30) },
-            new() { Id = Guid.NewGuid(), ToZone = zoneId, FromZone = otherZoneId, CreatedAt = DateTime.UtcNow.AddMinutes(-20) },
-            new() { Id = Guid.NewGuid(), FromZone = zoneId, ToZone = otherZoneId, CreatedAt = DateTime.UtcNow.AddMinutes(-10) }
+            Capacity = 100,
+            CurrentOccupancy = 25  // Stored occupancy
         };
 
         _zoneRepository.Setup(r => r.GetById(zoneId)).ReturnsAsync(zone);
-        _snapshotRepository.Setup(r => r.List(It.IsAny<ISpecification<ZoneStateSnapshot>>()))
-            .ReturnsAsync(new List<ZoneStateSnapshot>());
-        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
-            .ReturnsAsync(transitions);
 
         var sut = CreateSut();
 
@@ -483,42 +519,25 @@ public class ZoneServiceTests
 
         // Assert
         result.IsError.Should().BeFalse();
-        result.Value.OccupancyCount.Should().Be(1); // 2 entries - 1 exit = 1
+        result.Value.OccupancyCount.Should().Be(25); // Should return stored value directly
+        result.Value.Capacity.Should().Be(100);
+        result.Value.ZoneName.Should().Be("Test Zone");
     }
 
     [Fact]
-    public async Task GetCurrentState_WithSnapshotAndTransitions_CalculatesCorrectOccupancy()
+    public async Task GetCurrentState_WithZeroOccupancy_ReturnsZero()
     {
         // Arrange
         var zoneId = Guid.NewGuid();
-        var otherZoneId = Guid.NewGuid();
         var zone = new Zone
         {
             Id = zoneId,
-            Name = "Test Zone",
-            Capacity = 100
-        };
-
-        var snapshot = new ZoneStateSnapshot
-        {
-            Id = Guid.NewGuid(),
-            ZoneId = zoneId,
-            OccupancyCount = 5,
-            Capacity = 100,
-            CreatedAt = DateTime.UtcNow.AddHours(-1)
-        };
-
-        var transitions = new List<Transition>
-        {
-            new() { Id = Guid.NewGuid(), ToZone = zoneId, FromZone = otherZoneId, CreatedAt = DateTime.UtcNow.AddMinutes(-30) },
-            new() { Id = Guid.NewGuid(), ToZone = zoneId, FromZone = otherZoneId, CreatedAt = DateTime.UtcNow.AddMinutes(-20) }
+            Name = "Empty Zone",
+            Capacity = 50,
+            CurrentOccupancy = 0
         };
 
         _zoneRepository.Setup(r => r.GetById(zoneId)).ReturnsAsync(zone);
-        _snapshotRepository.Setup(r => r.List(It.IsAny<ISpecification<ZoneStateSnapshot>>()))
-            .ReturnsAsync(new List<ZoneStateSnapshot> { snapshot });
-        _transitionRepository.Setup(r => r.List(It.IsAny<ISpecification<Transition>>()))
-            .ReturnsAsync(transitions);
 
         var sut = CreateSut();
 
@@ -527,7 +546,7 @@ public class ZoneServiceTests
 
         // Assert
         result.IsError.Should().BeFalse();
-        result.Value.OccupancyCount.Should().Be(7); // 5 from snapshot + 2 entries
+        result.Value.OccupancyCount.Should().Be(0);
     }
 
     #endregion

@@ -89,4 +89,24 @@ public class RealTimeNotificationService : IRealTimeNotificationService
             _logger.LogError(ex, "Failed to send zone transition event");
         }
     }
+
+    public async Task NotifyZoneOccupancyChangedAsync(ZoneOccupancyChangedEvent occupancyEvent, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Notify all clients
+            await _hubContext.Clients.All.OnZoneOccupancyChanged(occupancyEvent);
+
+            // Also notify clients subscribed to this specific zone
+            var groupName = KoornikHub.GetZoneGroupName(occupancyEvent.ZoneId);
+            await _hubContext.Clients.Group(groupName).OnZoneOccupancyChanged(occupancyEvent);
+
+            _logger.LogDebug("Broadcast zone occupancy change for zone {ZoneId}: {Occupancy}/{Capacity}",
+                occupancyEvent.ZoneId, occupancyEvent.CurrentOccupancy, occupancyEvent.Capacity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to broadcast zone occupancy change event");
+        }
+    }
 }

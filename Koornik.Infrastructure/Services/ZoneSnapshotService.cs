@@ -1,4 +1,3 @@
-using Koornik.Application.Interfaces;
 using Koornik.Domain.Core.Repositories;
 using Koornik.Domain.Entities;
 using Koornik.Domain.Specifications;
@@ -70,7 +69,6 @@ public class ZoneSnapshotService : BackgroundService
 
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var zoneService = scope.ServiceProvider.GetRequiredService<IZoneService>();
 
         var zones = await unitOfWork.Repository<Zone>().ListAll();
         var snapshotsCreated = 0;
@@ -88,15 +86,13 @@ public class ZoneSnapshotService : BackgroundService
             {
                 _logger.LogInformation("Creating initial snapshot for zone {ZoneName} ({ZoneId})", zone.Name, zone.Id);
 
-                // Calculate current occupancy from all transitions
-                var occupancy = await zoneService.CalculateCurrentOccupancy(zone.Id);
-
+                // Use stored CurrentOccupancy from zone entity
                 var snapshot = new ZoneStateSnapshot
                 {
                     Id = Guid.NewGuid(),
                     ZoneId = zone.Id,
                     CreatedAt = DateTime.UtcNow,
-                    OccupancyCount = occupancy,
+                    OccupancyCount = zone.CurrentOccupancy,
                     Capacity = zone.Capacity
                 };
 
@@ -122,7 +118,6 @@ public class ZoneSnapshotService : BackgroundService
 
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var zoneService = scope.ServiceProvider.GetRequiredService<IZoneService>();
 
         var zones = await unitOfWork.Repository<Zone>().ListAll();
         var timestamp = DateTime.UtcNow;
@@ -135,14 +130,13 @@ public class ZoneSnapshotService : BackgroundService
 
             try
             {
-                var occupancy = await zoneService.CalculateCurrentOccupancy(zone.Id);
-
+                // Use stored CurrentOccupancy from zone entity
                 var snapshot = new ZoneStateSnapshot
                 {
                     Id = Guid.NewGuid(),
                     ZoneId = zone.Id,
                     CreatedAt = timestamp,
-                    OccupancyCount = occupancy,
+                    OccupancyCount = zone.CurrentOccupancy,
                     Capacity = zone.Capacity
                 };
 
@@ -150,7 +144,7 @@ public class ZoneSnapshotService : BackgroundService
                 snapshotsCreated++;
 
                 _logger.LogDebug("Created snapshot for zone {ZoneName}: Occupancy={Occupancy}/{Capacity}",
-                    zone.Name, occupancy, zone.Capacity);
+                    zone.Name, zone.CurrentOccupancy, zone.Capacity);
             }
             catch (Exception ex)
             {

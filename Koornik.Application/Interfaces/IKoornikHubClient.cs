@@ -19,6 +19,11 @@ public interface IKoornikHubClient
     /// Called when distance readings are received from a device.
     /// </summary>
     Task OnDistanceReading(DistanceReadingEvent distanceEvent);
+
+    /// <summary>
+    /// Called when a zone's occupancy changes.
+    /// </summary>
+    Task OnZoneOccupancyChanged(ZoneOccupancyChangedEvent occupancyEvent);
 }
 
 /// <summary>
@@ -51,10 +56,22 @@ public record DeviceStatusEvent
 /// <summary>
 /// Event raised when distance readings are received.
 /// </summary>
-public record DistanceReadingEvent
+ public record DistanceReadingEvent
 {
     public string MacAddress { get; init; } = string.Empty;
     public int FrontDistance { get; init; }
     public int BackDistance { get; init; }
+    public DateTime Timestamp { get; init; }
+}
+
+/// <summary>
+/// Event raised when a zone's occupancy changes.
+/// </summary>
+public record ZoneOccupancyChangedEvent
+{
+    public Guid ZoneId { get; init; }
+    public string ZoneName { get; init; } = string.Empty;
+    public int CurrentOccupancy { get; init; }
+    public int Capacity { get; init; }
     public DateTime Timestamp { get; init; }
 }

@@ -4,4 +4,5 @@ public class CreateZoneRequest
 {
     public string Name { get; set; } = string.Empty;
     public int Capacity { get; set; }
+    public string? GeoJson { get; set; }
 }

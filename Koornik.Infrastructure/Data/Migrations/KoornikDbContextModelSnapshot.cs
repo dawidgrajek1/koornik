@@ -83,6 +83,12 @@ namespace Koornik.Infrastructure.Data.Migrations
                     b.Property<int>("Capacity")
                         .HasColumnType("integer");
 
+                    b.Property<int>("CurrentOccupancy")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("GeoJson")
+                        .HasColumnType("text");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");

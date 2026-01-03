@@ -39,6 +39,27 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
             return errors;
         }
 
+        // Fetch the zones to update their CurrentOccupancy
+        var fromZone = await _unitOfWork.Repository<Zone>().GetById(request.FromZoneId);
+        var toZone = await _unitOfWork.Repository<Zone>().GetById(request.ToZoneId);
+
+        if (fromZone is null)
+        {
+            return Error.NotFound(description: "Source zone not found.");
+        }
+
+        if (toZone is null)
+        {
+            return Error.NotFound(description: "Destination zone not found.");
+        }
+
+        // Update occupancy counts
+        fromZone.CurrentOccupancy = Math.Max(0, fromZone.CurrentOccupancy - 1);
+        toZone.CurrentOccupancy += 1;
+
+        _unitOfWork.Repository<Zone>().Update(fromZone);
+        _unitOfWork.Repository<Zone>().Update(toZone);
+
         var transition = await _unitOfWork.Repository<Transition>().Add(new Transition
         {
             DeviceId = request.DeviceId,
@@ -48,6 +69,11 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
         });
 
         await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Transition created: FromZone {FromZoneId} (occupancy: {FromOccupancy}) -> ToZone {ToZoneId} (occupancy: {ToOccupancy})",
+            fromZone.Id, fromZone.CurrentOccupancy, toZone.Id, toZone.CurrentOccupancy);
+
         return transition.ToResponse();
     }
 
