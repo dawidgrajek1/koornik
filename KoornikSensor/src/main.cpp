@@ -23,6 +23,7 @@
 
 #define DEFAULT_THRESHOLD 500       // Default detection threshold in mm
 #define DISTANCE_STREAM_INTERVAL 500  // Live distance streaming interval in ms
+#define STATUS_PUBLISH_INTERVAL 10000 // Status publish interval in ms
 #define CALIBRATION_MARGIN 100      // Margin to subtract from calibrated distance
 #define CALIBRATION_SAMPLES 10      // Number of samples for calibration
 #define DETECTION_TIMEOUT 2000      // Timeout for direction detection in ms
@@ -74,6 +75,7 @@ unsigned long detectionStartTime = 0;
 unsigned long lastMqttAttempt = 0;
 unsigned long lastLedToggle = 0;
 unsigned long lastDistancePublish = 0;
+unsigned long lastStatusPublish = 0;
 bool ledState = false;
 bool sensorsInitialized = false;
 bool distanceStreamEnabled = false;
@@ -295,6 +297,7 @@ void initSensors();
 void calibrateSensors();
 void detectDirection();
 void updateLED();
+void publishStatus();
 
 // ==================== SETUP ====================
 void setup() {
@@ -347,6 +350,9 @@ void loop() {
         reconnectMQTT();
     }
     mqtt.loop();
+    
+    // Publish status periodically
+    publishStatus();
     
     // Read sensors and detect direction
     if (sensorsInitialized) {
@@ -681,6 +687,21 @@ void calibrateSensors() {
         String errorJson = "{\"state\":\"calibration_failed\",\"error\":\"invalid_readings\"}";
         mqtt.publish(topicStatus.c_str(), errorJson.c_str());
     }
+}
+
+// ==================== STATUS PUBLISHING ====================
+void publishStatus() {
+    if (!mqtt.connected()) return;
+    
+    unsigned long now = millis();
+    if (now - lastStatusPublish < STATUS_PUBLISH_INTERVAL) return;
+    lastStatusPublish = now;
+    
+    String statusJson = "{\"state\":\"online\",\"thresholds\":{\"front\":" + 
+                        String(thresholdFront) + ",\"back\":" + String(thresholdBack) + 
+                        "},\"sensors\":" + (sensorsInitialized ? "true" : "false") +
+                        ",\"rssi\":" + String(WiFi.RSSI()) + "}";
+    mqtt.publish(topicStatus.c_str(), statusJson.c_str());
 }
 
 // ==================== DIRECTION DETECTION ====================
