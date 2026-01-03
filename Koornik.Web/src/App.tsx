@@ -1,4 +1,4 @@
-import { ConfigProvider, theme } from 'antd';
+import { ConfigProvider, theme, App as AntApp } from 'antd';
 import { Dashboard } from './components';
 import './App.css';
 
@@ -13,7 +13,9 @@ function App() {
         },
       }}
     >
-      <Dashboard />
+      <AntApp>
+        <Dashboard />
+      </AntApp>
     </ConfigProvider>
   );
 }

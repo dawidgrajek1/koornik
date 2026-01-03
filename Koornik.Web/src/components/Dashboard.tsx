@@ -1,25 +1,31 @@
 /**
- * Main dashboard layout combining floor plan, events table, and device panel.
+ * Main dashboard layout combining floor plan, events table, zones table, and device panel.
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Layout, Typography, Badge, Spin, Alert } from 'antd';
+import { Layout, Typography, Badge, Spin, Alert, App, Splitter } from 'antd';
 import { WifiOutlined, DisconnectOutlined, LoadingOutlined } from '@ant-design/icons';
+import type { Polygon } from 'geojson';
 import { FloorPlanMap } from './FloorPlanMap';
 import { EventsTable } from './EventsTable';
+import { ZonesTable } from './ZonesTable';
 import { DevicePanel } from './DevicePanel';
 import { DeviceDetailDrawer } from './DeviceDetailDrawer';
 import { useKoornikHub } from '../hooks/useKoornikHub';
-import { getDevices, getZones, getAllZoneStates } from '../services/api';
+import { getDevices, getZones, getAllZoneStates, updateZone } from '../services/api';
 import type { Device, Zone, ZoneState } from '../types';
 
 const { Header, Content, Sider } = Layout;
 const { Title } = Typography;
+const { Panel } = Splitter;
 
 /** Polling interval for zone states (in ms) */
 const ZONE_STATE_POLL_INTERVAL = 30000;
 
 export function Dashboard() {
+  // Get message API from App context
+  const { message } = App.useApp();
+
   // API data state
   const [devices, setDevices] = useState<Device[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -30,6 +36,7 @@ export function Dashboard() {
   // UI state
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [drawingZoneId, setDrawingZoneId] = useState<string | null>(null);
 
   // SignalR hook
   const {
@@ -52,6 +59,8 @@ export function Dashboard() {
           getDevices(),
           getZones(),
         ]);
+
+        console.log('Loaded zones:', zonesData);
 
         setDevices(devicesData);
         setZones(zonesData);
@@ -121,6 +130,53 @@ export function Dashboard() {
     setSelectedDevice(null);
   }, []);
 
+  // Zone drawing handlers
+  const handleDrawZone = useCallback((zoneId: string) => {
+    // Toggle drawing mode
+    setDrawingZoneId(prev => (prev === zoneId ? null : zoneId));
+  }, []);
+
+  const handleZoneDrawn = useCallback(async (zoneId: string, geoJson: Polygon) => {
+    const zone = zones.find(z => z.id === zoneId);
+    if (!zone) return;
+
+    try {
+      const updatedZone = await updateZone({
+        id: zoneId,
+        name: zone.name,
+        capacity: zone.capacity,
+        geoJson,
+      });
+      
+      // Update local state
+      setZones(prev => prev.map(z => (z.id === zoneId ? updatedZone : z)));
+      setDrawingZoneId(null);
+      message.success(`Zone "${zone.name || 'Unnamed'}" boundary saved!`);
+    } catch (err) {
+      console.error('Failed to save zone boundary:', err);
+      message.error('Failed to save zone boundary');
+    }
+  }, [zones, message]);
+
+  const handleClearZoneGeoJson = useCallback(async (zoneId: string) => {
+    const zone = zones.find(z => z.id === zoneId);
+    if (!zone) return;
+
+    try {
+      const updatedZone = await updateZone({
+        id: zoneId,
+        name: zone.name,
+        capacity: zone.capacity,
+        geoJson: null,
+      });
+      setZones(prev => prev.map(z => (z.id === zoneId ? updatedZone : z)));
+      message.success(`Zone "${zone.name || 'Unnamed'}" removed from map!`);
+    } catch (err) {
+      console.error('Failed to clear zone geoJson:', err);
+      message.error('Failed to remove zone from map');
+    }
+  }, [zones, message]);
+
   // Connection status indicator
   const connectionBadge = (() => {
     switch (connectionState) {
@@ -181,37 +237,70 @@ export function Dashboard() {
               showIcon
               closable
               style={{ margin: 16 }}
-              onClose={() => setError(null)}
             />
           )}
 
-          {/* Floor Plan Map */}
-          <div style={{ flex: 1, minHeight: 400 }}>
-            <FloorPlanMap
-              zones={zones}
-              zoneStates={zoneStates}
-              selectedZoneId={selectedZoneId}
-              onZoneClick={handleZoneClick}
-            />
-          </div>
+          <Splitter orientation="vertical" style={{ flex: 1 }}>
+            {/* Floor Plan Map */}
+            <Panel defaultSize="60%" min="30%" collapsible>
+              <div style={{ height: '100%', position: 'relative' }}>
+                <FloorPlanMap
+                  zones={zones}
+                  zoneStates={zoneStates}
+                  selectedZoneId={selectedZoneId}
+                  drawingZoneId={drawingZoneId}
+                  onZoneClick={handleZoneClick}
+                  onZoneDrawn={handleZoneDrawn}
+                />
+                {drawingZoneId && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 16,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      background: 'rgba(0, 0, 0, 0.8)',
+                      color: '#fff',
+                      padding: '8px 16px',
+                      borderRadius: 4,
+                      zIndex: 1000,
+                    }}
+                  >
+                    Click on the map to draw zone boundary. Click the first point (green) to complete.
+                  </div>
+                )}
+              </div>
+            </Panel>
 
-          {/* Events Table */}
-          <div
-            style={{
-              height: 350,
-              padding: 16,
-              background: '#1f1f1f',
-              borderTop: '1px solid #303030',
-            }}
-          >
-            <EventsTable
-              transitions={transitions}
-              zones={zones}
-              devices={devices}
-              filterZoneId={selectedZoneId}
-              onClearFilter={handleClearZoneFilter}
-            />
-          </div>
+            {/* Events and Zones Tables */}
+            <Panel defaultSize="40%" min="200px" collapsible>
+              <Splitter style={{ height: '100%', background: '#1f1f1f' }}>
+                {/* Events Table */}
+                <Panel defaultSize="60%" min="30%" style={{ padding: 16 }}>
+                  <EventsTable
+                    transitions={transitions}
+                    zones={zones}
+                    devices={devices}
+                    filterZoneId={selectedZoneId}
+                    onClearFilter={handleClearZoneFilter}
+                  />
+                </Panel>
+
+                {/* Zones Table */}
+                <Panel defaultSize="40%" min="300px" style={{ padding: 16 }}>
+                  <ZonesTable
+                    zones={zones}
+                    zoneStates={zoneStates}
+                    selectedZoneId={selectedZoneId}
+                    drawingZoneId={drawingZoneId}
+                    onZoneSelect={handleZoneClick}
+                    onDrawZone={handleDrawZone}
+                    onClearZoneGeoJson={handleClearZoneGeoJson}
+                  />
+                </Panel>
+              </Splitter>
+            </Panel>
+          </Splitter>
         </Content>
 
         {/* Device Panel (Right Sider) */}

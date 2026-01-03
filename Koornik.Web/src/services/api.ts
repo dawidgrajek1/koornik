@@ -4,8 +4,22 @@
 
 import { API_BASE_URL } from '../config/env';
 import type { Device } from '../types/device';
-import type { Zone, ZoneState } from '../types/zone';
+import type { Zone, ZoneState, UpdateZoneRequest } from '../types/zone';
 import type { Transition } from '../types/transition';
+import type { Polygon } from 'geojson';
+
+/** Parse zone GeoJSON from string if needed */
+function parseZoneGeojson(zone: Zone & { geoJson?: string | Polygon | null }): Zone {
+  if (zone.geoJson && typeof zone.geoJson === 'string') {
+    try {
+      return { ...zone, geoJson: JSON.parse(zone.geoJson) as Polygon };
+    } catch {
+      console.warn(`Failed to parse GeoJSON for zone ${zone.id}`);
+      return { ...zone, geoJson: null };
+    }
+  }
+  return zone as Zone;
+}
 
 /**
  * Generic fetch wrapper with error handling.
@@ -63,12 +77,14 @@ export async function getDeviceByZone(zoneId: string): Promise<Device> {
 
 /** Fetch all zones */
 export async function getZones(): Promise<Zone[]> {
-  return fetchApi<Zone[]>('/api/v1/zones');
+  const zones = await fetchApi<Zone[]>('/api/v1/zones');
+  return zones.map(parseZoneGeojson);
 }
 
 /** Fetch a single zone by ID */
 export async function getZone(id: string): Promise<Zone> {
-  return fetchApi<Zone>(`/api/v1/zones/${id}`);
+  const zone = await fetchApi<Zone>(`/api/v1/zones/${id}`);
+  return parseZoneGeojson(zone);
 }
 
 /** Fetch current zone state (occupancy) */
@@ -95,6 +111,30 @@ export async function getAllZoneStates(zones: Zone[]): Promise<Map<string, ZoneS
   });
   
   return stateMap;
+}
+
+/** Update a zone */
+export async function updateZone(request: UpdateZoneRequest): Promise<Zone> {
+  // Backend expects geoJson as a serialized JSON string
+  const body = {
+    id: request.id,
+    name: request.name,
+    capacity: request.capacity,
+    geoJson: request.geoJson ? JSON.stringify(request.geoJson) : null,
+  };
+  
+  const zone = await fetchApi<Zone>(`/api/v1/zones/${request.id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  return parseZoneGeojson(zone);
+}
+
+/** Delete a zone */
+export async function deleteZone(id: string): Promise<void> {
+  await fetchApi<void>(`/api/v1/zones/${id}`, {
+    method: 'DELETE',
+  });
 }
 
 // ============================================================================

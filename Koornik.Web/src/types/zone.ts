@@ -9,8 +9,8 @@ export interface Zone {
   id: string;
   name: string | null;
   capacity: number;
-  /** GeoJSON polygon for floor plan rendering (future field) */
-  geojson?: Polygon | null;
+  /** GeoJSON polygon for floor plan rendering */
+  geoJson?: Polygon | null;
 }
 
 /** Response from GET /api/v1/zones/{id}/state */
@@ -44,4 +44,5 @@ export interface UpdateZoneRequest {
   id: string;
   name?: string | null;
   capacity: number;
+  geoJson?: Polygon | null;
 }

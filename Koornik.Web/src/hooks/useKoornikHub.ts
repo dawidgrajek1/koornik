@@ -53,10 +53,13 @@ export function useKoornikHub(): UseKoornikHubResult {
       return;
     }
 
+    // Track if cleanup has been called (for React Strict Mode)
+    let isCancelled = false;
+
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(HUB_URL)
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
-      .configureLogging(signalR.LogLevel.Information)
+      .configureLogging(signalR.LogLevel.None)
       .build();
 
     connectionRef.current = connection;
@@ -79,25 +82,37 @@ export function useKoornikHub(): UseKoornikHubResult {
     });
 
     // Connection state handlers
-    connection.onclose(() => setConnectionState('disconnected'));
-    connection.onreconnecting(() => setConnectionState('reconnecting'));
-    connection.onreconnected(() => setConnectionState('connected'));
+    connection.onclose(() => {
+      if (!isCancelled) setConnectionState('disconnected');
+    });
+    connection.onreconnecting(() => {
+      if (!isCancelled) setConnectionState('reconnecting');
+    });
+    connection.onreconnected(() => {
+      if (!isCancelled) setConnectionState('connected');
+    });
 
     // Start connection
     setConnectionState('connecting');
     connection
       .start()
       .then(() => {
-        setConnectionState('connected');
-        console.log('SignalR connected');
+        if (!isCancelled) {
+          setConnectionState('connected');
+          console.log('SignalR connected');
+        }
       })
       .catch(err => {
-        console.error('SignalR connection failed:', err);
-        setConnectionState('disconnected');
+        // Ignore errors caused by cleanup during connection attempt
+        if (!isCancelled) {
+          console.error('SignalR connection failed:', err);
+          setConnectionState('disconnected');
+        }
       });
 
     // Cleanup
     return () => {
+      isCancelled = true;
       connection.stop();
     };
   }, []);

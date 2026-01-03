@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useEffect, useState, useCallback } from 'react';
-import { Table, Tag, Button, Space, Typography } from 'antd';
+import { Table, Tag, Button, Space, Typography, Pagination } from 'antd';
 import { CloseCircleOutlined, ArrowRightOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { TransitionEvent } from '../types';
@@ -216,8 +216,21 @@ export function EventsTable({
 
   const filterZoneName = filterZoneId ? zoneNameMap.get(filterZoneId) : null;
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredTransitions.slice(start, start + pageSize);
+  }, [filteredTransitions, currentPage, pageSize]);
+
+  // Reset to page 1 when data changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filteredTransitions.length]);
+
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header with filter indicator and refresh button */}
       <div
         style={{
@@ -225,10 +238,11 @@ export function EventsTable({
           justifyContent: 'space-between',
           alignItems: 'center',
           padding: '8px 0',
+          flexShrink: 0,
         }}
       >
-        <Space>
-          <Text strong>Today's Events</Text>
+        <Space wrap>
+          <Text strong>Events</Text>
           <Button
             size="small"
             type="text"
@@ -250,21 +264,36 @@ export function EventsTable({
         )}
       </div>
 
-      {/* Events table */}
-      <Table
-        dataSource={filteredTransitions}
-        columns={columns}
-        rowKey="transitionId"
-        size="small"
-        loading={loading}
-        pagination={{ pageSize: 10, showSizeChanger: false }}
-        scroll={{ y: 300 }}
-        locale={{
-          emptyText: filterZoneId
-            ? 'No events for this zone today'
-            : 'No events today',
-        }}
-      />
+      {/* Events table - scrollable area */}
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        <Table
+          dataSource={paginatedData}
+          columns={columns}
+          rowKey="transitionId"
+          size="small"
+          loading={loading}
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+          locale={{
+            emptyText: filterZoneId
+              ? 'No events for this zone today'
+              : 'No events today',
+          }}
+        />
+      </div>
+
+      {/* Pagination - always visible at bottom */}
+      <div style={{ flexShrink: 0, paddingTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+        <Pagination
+          size="small"
+          current={currentPage}
+          pageSize={pageSize}
+          total={filteredTransitions.length}
+          onChange={setCurrentPage}
+          showSizeChanger={false}
+          showTotal={(total) => `${total} events`}
+        />
+      </div>
     </div>
   );
 }

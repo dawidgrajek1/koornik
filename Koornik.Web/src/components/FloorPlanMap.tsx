@@ -1,11 +1,13 @@
 /**
  * Floor plan map component using Leaflet with dynamic image bounds.
  * Displays zones as GeoJSON polygons with permanent occupancy tooltips.
+ * Supports zone drawing mode for defining zone boundaries.
  */
 
-import { useEffect, useState, useRef, useMemo } from 'react';
-import { MapContainer, ImageOverlay, GeoJSON, Tooltip } from 'react-leaflet';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { MapContainer, ImageOverlay, GeoJSON, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import type { Polygon, Position } from 'geojson';
 import type { Zone, ZoneState } from '../types';
 import 'leaflet/dist/leaflet.css';
 
@@ -19,8 +21,12 @@ interface FloorPlanMapProps {
   zoneStates: Map<string, ZoneState>;
   /** Currently selected zone ID */
   selectedZoneId: string | null;
+  /** Zone ID currently being drawn (null = not drawing) */
+  drawingZoneId: string | null;
   /** Called when a zone is clicked */
   onZoneClick: (zoneId: string | null) => void;
+  /** Called when zone drawing is completed */
+  onZoneDrawn: (zoneId: string, geojson: Polygon) => void;
 }
 
 interface ImageDimensions {
@@ -36,11 +42,103 @@ function getOccupancyColor(percentage: number): string {
   return '#52c41a'; // Green - good
 }
 
+/** Drawing overlay component for creating polygon zones */
+interface DrawingOverlayProps {
+  drawingZoneId: string;
+  onComplete: (zoneId: string, geojson: Polygon) => void;
+}
+
+function DrawingOverlay({ drawingZoneId, onComplete }: DrawingOverlayProps) {
+  const [points, setPoints] = useState<L.LatLng[]>([]);
+  const polylineRef = useRef<L.Polyline | null>(null);
+  const markersRef = useRef<L.CircleMarker[]>([]);
+  const map = useMapEvents({
+    click(e) {
+      const newPoints = [...points, e.latlng];
+      setPoints(newPoints);
+    },
+  });
+
+  // Draw the polygon preview
+  useEffect(() => {
+    // Clear previous drawings
+    if (polylineRef.current) {
+      map.removeLayer(polylineRef.current);
+    }
+    markersRef.current.forEach(m => map.removeLayer(m));
+    markersRef.current = [];
+
+    if (points.length > 0) {
+      // Draw polyline connecting points
+      const linePoints = [...points];
+      if (points.length > 2) {
+        linePoints.push(points[0]); // Close the polygon preview
+      }
+      polylineRef.current = L.polyline(linePoints, {
+        color: '#1890ff',
+        weight: 2,
+        dashArray: '5, 5',
+      }).addTo(map);
+
+      // Draw markers at each point
+      points.forEach((point, index) => {
+        const isFirst = index === 0;
+        const marker = L.circleMarker(point, {
+          radius: isFirst ? 10 : 6,
+          color: isFirst ? '#52c41a' : '#1890ff',
+          fillColor: isFirst ? '#52c41a' : '#1890ff',
+          fillOpacity: 0.8,
+          weight: 2,
+        }).addTo(map);
+
+        // Click on first point to complete
+        if (isFirst && points.length >= 3) {
+          marker.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            completePolygon();
+          });
+          marker.bindTooltip('Click to complete', { permanent: false, direction: 'top' });
+        }
+
+        markersRef.current.push(marker);
+      });
+    }
+
+    return () => {
+      if (polylineRef.current) {
+        map.removeLayer(polylineRef.current);
+      }
+      markersRef.current.forEach(m => map.removeLayer(m));
+    };
+  }, [points, map]);
+
+  const completePolygon = useCallback(() => {
+    if (points.length < 3) return;
+
+    // Convert to GeoJSON polygon
+    // Note: GeoJSON uses [lng, lat] order, Leaflet uses [lat, lng]
+    const coordinates: Position[] = points.map(p => [p.lng, p.lat]);
+    coordinates.push(coordinates[0]); // Close the ring
+
+    const polygon: Polygon = {
+      type: 'Polygon',
+      coordinates: [coordinates],
+    };
+
+    onComplete(drawingZoneId, polygon);
+    setPoints([]);
+  }, [points, drawingZoneId, onComplete]);
+
+  return null;
+}
+
 export function FloorPlanMap({
   zones,
   zoneStates,
   selectedZoneId,
+  drawingZoneId,
   onZoneClick,
+  onZoneDrawn,
 }: FloorPlanMapProps) {
   const [imageDimensions, setImageDimensions] = useState<ImageDimensions | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -71,7 +169,13 @@ export function FloorPlanMap({
 
   // Filter zones that have GeoJSON data
   const zonesWithGeoJson = useMemo(
-    () => zones.filter(zone => zone.geojson),
+    () => {
+      const filtered = zones.filter(zone => zone.geoJson);
+      if (filtered.length > 0) {
+        console.log('Zones with GeoJSON:', filtered.map(z => ({ id: z.id, name: z.name, geoJson: z.geoJson })));
+      }
+      return filtered;
+    },
     [zones]
   );
 
@@ -126,12 +230,19 @@ export function FloorPlanMap({
         const occupancy = state?.occupancyCount ?? 0;
         const capacity = state?.capacity ?? zone.capacity;
         const percentage = state?.occupancyPercentage ?? 0;
+        // Use geoJson hash in key to force re-render when polygon changes
+        const geoKey = `${zone.id}-${JSON.stringify(zone.geoJson)}`;
 
         return (
           <GeoJSON
-            key={zone.id}
-            data={zone.geojson!}
+            key={geoKey}
+            data={zone.geoJson!}
             style={() => getZoneStyle(zone.id)}
+            coordsToLatLng={(coords) => {
+              // GeoJSON stores [x, y] (lng, lat), convert to Leaflet LatLng for Simple CRS
+              // In Simple CRS: lat = y, lng = x
+              return L.latLng(coords[1], coords[0]);
+            }}
             eventHandlers={{
               click: () => {
                 // Toggle selection
@@ -159,6 +270,14 @@ export function FloorPlanMap({
           </GeoJSON>
         );
       })}
+
+      {/* Drawing overlay when in drawing mode */}
+      {drawingZoneId && (
+        <DrawingOverlay
+          drawingZoneId={drawingZoneId}
+          onComplete={onZoneDrawn}
+        />
+      )}
     </MapContainer>
   );
 }

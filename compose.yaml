@@ -10,7 +10,7 @@
     env_file:
       - path: .env
         required: true
-      - path: .env.secrets
+      - path: .env.se crets
         required: true
 
   Mosquitto:
