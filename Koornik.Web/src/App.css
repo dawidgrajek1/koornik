@@ -1,0 +1,98 @@
+/* App-level styles for Koornik Dashboard */
+
+/* Leaflet container must have explicit height */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #1f1f1f;
+}
+
+/* Zone tooltip styling */
+.zone-tooltip {
+  background: rgba(0, 0, 0, 0.85) !important;
+  border: 1px solid #434343 !important;
+  border-radius: 4px !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+.zone-tooltip::before {
+  display: none !important;
+}
+
+/* Ant Design table adjustments for dark theme */
+.ant-table-wrapper {
+  height: 100%;
+}
+
+.ant-table {
+  background: transparent !important;
+}
+
+.ant-table-thead > tr > th {
+  background: #1f1f1f !important;
+  border-bottom: 1px solid #303030 !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid #303030 !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: #262626 !important;
+}
+
+/* Device panel list styling */
+.ant-list-item {
+  border-bottom: none !important;
+}
+
+/* Drawer styling */
+.ant-drawer-content {
+  background: #1f1f1f !important;
+}
+
+.ant-drawer-header {
+  background: #141414 !important;
+  border-bottom: 1px solid #303030 !important;
+}
+
+.ant-drawer-title {
+  color: #fff !important;
+}
+
+/* Card hover effect in device panel */
+.ant-card-hoverable:hover {
+  border-color: #1890ff !important;
+}
+
+/* Spin container */
+.ant-spin-nested-loading,
+.ant-spin-container {
+  height: 100%;
+}
+
+/* Badge text color fix */
+.ant-badge-status-text {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Layout adjustments */
+.ant-layout {
+  background: #141414;
+}
+
+.ant-layout-content {
+  background: #141414;
+}
+
+.ant-layout-sider {
+  background: #1f1f1f !important;
+}
+
+/* Header title */
+.ant-typography {
+  margin-bottom: 0;
+}

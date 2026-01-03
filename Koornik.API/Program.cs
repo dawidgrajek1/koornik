@@ -31,6 +31,27 @@ try
     // Add controllers
     builder.Services.AddControllers();
 
+    // Add CORS
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            policy.WithOrigins(
+                      "http://localhost:5173",
+                      "http://localhost:3000",
+                      "http://localhost:8080",
+                      "http://host.docker.internal:5173",
+                      "http://host.docker.internal:3000",
+                      "http://host.docker.internal:8080",
+                      "http://web",
+                      "http://web:80",
+                      "http://web:8080")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        });
+    });
+
     // Add API versioning
     builder.Services.AddApiVersioning(options =>
     {
@@ -69,6 +90,7 @@ try
     }
 
     app.UseSerilogRequestLogging();
+    app.UseCors();
     app.UseRouting();
     app.MapControllers();
 
