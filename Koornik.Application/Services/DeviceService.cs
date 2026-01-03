@@ -42,6 +42,13 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
             errors.Add(Error.Validation(description: "MAC address cannot be empty."));
         }
 
+        // At least one zone must be specified (border device has one zone, normal device has both)
+        if ((request.FrontZoneId is null || request.FrontZoneId == Guid.Empty) && 
+            (request.BackZoneId is null || request.BackZoneId == Guid.Empty))
+        {
+            errors.Add(Error.Validation(description: "At least one zone (front or back) must be specified."));
+        }
+
         if (errors.Count > 0)
         {
             return errors;
@@ -52,8 +59,8 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
             Name = request.Name,
             IpAddress = request.IpAddress,
             MacAddress = request.MacAddress,
-            FrontZoneId = request.FrontZoneId,
-            BackZoneId = request.BackZoneId,
+            FrontZoneId = request.FrontZoneId == Guid.Empty ? null : request.FrontZoneId,
+            BackZoneId = request.BackZoneId == Guid.Empty ? null : request.BackZoneId,
         });
 
         await _unitOfWork.SaveChangesAsync();
@@ -126,6 +133,13 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
             return Error.Validation(description: "Device id should not be empty.");
         }
 
+        // At least one zone must be specified
+        if ((request.FrontZoneId is null || request.FrontZoneId == Guid.Empty) && 
+            (request.BackZoneId is null || request.BackZoneId == Guid.Empty))
+        {
+            return Error.Validation(description: "At least one zone (front or back) must be specified.");
+        }
+
         var device = await _unitOfWork.Repository<Device>().GetById(id);
 
         if (device is null)
@@ -136,8 +150,8 @@ public class DeviceService(IUnitOfWork unitOfWork, ILogger<DeviceService> logger
         device.Name = request.Name;
         device.IpAddress = request.IpAddress;
         device.MacAddress = request.MacAddress;
-        device.FrontZoneId = request.FrontZoneId;
-        device.BackZoneId = request.BackZoneId;
+        device.FrontZoneId = request.FrontZoneId == Guid.Empty ? null : request.FrontZoneId;
+        device.BackZoneId = request.BackZoneId == Guid.Empty ? null : request.BackZoneId;
 
         _unitOfWork.Repository<Device>().Update(device);
         await _unitOfWork.SaveChangesAsync();

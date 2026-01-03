@@ -9,6 +9,6 @@ public class Transition : BaseEntity, IBaseEventLog
     public Guid Id { get; set; }
     public Guid DeviceId { get; set; }
     public DateTime CreatedAt { get; set; }
-    public Guid FromZone { get; set; }
-    public Guid ToZone { get; set; }
+    public Guid? FromZone { get; set; }
+    public Guid? ToZone { get; set; }
 }

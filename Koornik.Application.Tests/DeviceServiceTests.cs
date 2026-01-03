@@ -169,7 +169,9 @@ public class DeviceServiceTests
         {
             Name = "",
             IpAddress = "",
-            MacAddress = ""
+            MacAddress = "",
+            FrontZoneId = null,
+            BackZoneId = null
         };
 
         var sut = CreateSut();
@@ -179,10 +181,108 @@ public class DeviceServiceTests
 
         // Assert
         result.IsError.Should().BeTrue();
-        result.Errors.Should().HaveCount(3);
+        result.Errors.Should().HaveCount(4);
         result.Errors.Should().Contain(e => e.Description == "Device name cannot be empty.");
         result.Errors.Should().Contain(e => e.Description == "IP address cannot be empty.");
         result.Errors.Should().Contain(e => e.Description == "MAC address cannot be empty.");
+        result.Errors.Should().Contain(e => e.Description == "At least one zone (front or back) must be specified.");
+    }
+
+    [Fact]
+    public async Task CreateDevice_WithOnlyFrontZone_SucceedsAsBorderDevice()
+    {
+        // Arrange - Border device with only front zone (back is "Outside")
+        var request = new CreateDeviceRequest
+        {
+            Name = "Border Device",
+            IpAddress = "192.168.1.100",
+            MacAddress = "AA:BB:CC:DD:EE:FF",
+            FrontZoneId = Guid.NewGuid(),
+            BackZoneId = null
+        };
+
+        var createdDevice = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = request.Name,
+            IpAddress = request.IpAddress,
+            MacAddress = request.MacAddress,
+            FrontZoneId = request.FrontZoneId,
+            BackZoneId = null
+        };
+
+        _deviceRepository.Setup(r => r.Add(It.IsAny<Device>())).ReturnsAsync(createdDevice);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateDevice(request);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.FrontZoneId.Should().Be(request.FrontZoneId);
+        result.Value.BackZoneId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CreateDevice_WithOnlyBackZone_SucceedsAsBorderDevice()
+    {
+        // Arrange - Border device with only back zone (front is "Outside")
+        var request = new CreateDeviceRequest
+        {
+            Name = "Border Device",
+            IpAddress = "192.168.1.100",
+            MacAddress = "AA:BB:CC:DD:EE:FF",
+            FrontZoneId = null,
+            BackZoneId = Guid.NewGuid()
+        };
+
+        var createdDevice = new Device
+        {
+            Id = Guid.NewGuid(),
+            Name = request.Name,
+            IpAddress = request.IpAddress,
+            MacAddress = request.MacAddress,
+            FrontZoneId = null,
+            BackZoneId = request.BackZoneId
+        };
+
+        _deviceRepository.Setup(r => r.Add(It.IsAny<Device>())).ReturnsAsync(createdDevice);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateDevice(request);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.FrontZoneId.Should().BeNull();
+        result.Value.BackZoneId.Should().Be(request.BackZoneId);
+    }
+
+    [Fact]
+    public async Task CreateDevice_WithNoZones_ReturnsValidationError()
+    {
+        // Arrange - At least one zone is required
+        var request = new CreateDeviceRequest
+        {
+            Name = "Invalid Device",
+            IpAddress = "192.168.1.100",
+            MacAddress = "AA:BB:CC:DD:EE:FF",
+            FrontZoneId = null,
+            BackZoneId = null
+        };
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateDevice(request);
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.Errors.Should().Contain(e => e.Description == "At least one zone (front or back) must be specified.");
     }
 
     #endregion
@@ -493,7 +593,8 @@ public class DeviceServiceTests
         {
             Name = "New Name",
             IpAddress = "192.168.1.200",
-            MacAddress = "BB:BB:BB:BB:BB:BB"
+            MacAddress = "BB:BB:BB:BB:BB:BB",
+            FrontZoneId = Guid.NewGuid() // At least one zone required
         };
 
         _deviceRepository.Setup(r => r.GetById(deviceId)).ReturnsAsync((Device?)null);

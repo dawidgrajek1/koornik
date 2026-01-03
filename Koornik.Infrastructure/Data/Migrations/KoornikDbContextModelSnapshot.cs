@@ -28,10 +28,10 @@ namespace Koornik.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("BackZoneId")
+                    b.Property<Guid?>("BackZoneId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("FrontZoneId")
+                    b.Property<Guid?>("FrontZoneId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("IpAddress")
@@ -63,10 +63,10 @@ namespace Koornik.Infrastructure.Data.Migrations
                     b.Property<Guid>("DeviceId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("FromZone")
+                    b.Property<Guid?>("FromZone")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ToZone")
+                    b.Property<Guid?>("ToZone")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");

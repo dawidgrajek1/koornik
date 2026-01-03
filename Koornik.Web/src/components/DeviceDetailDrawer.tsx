@@ -57,11 +57,11 @@ export function DeviceDetailDrawer({
     }
   }, [device?.macAddress, onSubscribe, onUnsubscribe]);
 
-  // Get zone info
-  const frontZone = device ? zones.find(z => z.id === device.frontZoneId) : null;
-  const backZone = device ? zones.find(z => z.id === device.backZoneId) : null;
-  const frontZoneState = device ? zoneStates.get(device.frontZoneId) : null;
-  const backZoneState = device ? zoneStates.get(device.backZoneId) : null;
+  // Get zone info (handle null for border devices)
+  const frontZone = device?.frontZoneId ? zones.find(z => z.id === device.frontZoneId) : null;
+  const backZone = device?.backZoneId ? zones.find(z => z.id === device.backZoneId) : null;
+  const frontZoneState = device?.frontZoneId ? zoneStates.get(device.frontZoneId) : null;
+  const backZoneState = device?.backZoneId ? zoneStates.get(device.backZoneId) : null;
 
   // Get status info
   const statusText = deviceStatus?.state || 'Unknown';
@@ -115,7 +115,11 @@ export function DeviceDetailDrawer({
               <div>
                 <Text type="secondary">Front Zone</Text>
                 <div>
-                  <Text strong>{frontZone?.name || zoneNameMap.get(device.frontZoneId) || 'Unknown'}</Text>
+                  {device.frontZoneId ? (
+                    <Text strong>{frontZone?.name || zoneNameMap.get(device.frontZoneId) || 'Unknown'}</Text>
+                  ) : (
+                    <Text style={{ fontStyle: 'italic', color: '#888' }}>Outside</Text>
+                  )}
                 </div>
               </div>
               {frontZoneState && (
@@ -135,7 +139,11 @@ export function DeviceDetailDrawer({
               <div>
                 <Text type="secondary">Back Zone</Text>
                 <div>
-                  <Text strong>{backZone?.name || zoneNameMap.get(device.backZoneId) || 'Unknown'}</Text>
+                  {device.backZoneId ? (
+                    <Text strong>{backZone?.name || zoneNameMap.get(device.backZoneId) || 'Unknown'}</Text>
+                  ) : (
+                    <Text style={{ fontStyle: 'italic', color: '#888' }}>Outside</Text>
+                  )}
                 </div>
               </div>
               {backZoneState && (

@@ -10,8 +10,8 @@ interface DeviceFormValues {
   name: string;
   ipAddress: string;
   macAddress: string;
-  frontZoneId: string;
-  backZoneId: string;
+  frontZoneId?: string;
+  backZoneId?: string;
 }
 
 interface DeviceFormModalProps {
@@ -48,8 +48,8 @@ export function DeviceFormModal({
           name: device.name || '',
           ipAddress: device.ipAddress || '',
           macAddress: device.macAddress || '',
-          frontZoneId: device.frontZoneId,
-          backZoneId: device.backZoneId,
+          frontZoneId: device.frontZoneId || undefined,
+          backZoneId: device.backZoneId || undefined,
         });
       } else {
         form.resetFields();
@@ -61,14 +61,23 @@ export function DeviceFormModal({
     try {
       const values = await form.validateFields();
       
+      // Validate that at least one zone is selected
+      if (!values.frontZoneId && !values.backZoneId) {
+        form.setFields([
+          { name: 'frontZoneId', errors: ['At least one zone must be selected'] },
+          { name: 'backZoneId', errors: ['At least one zone must be selected'] },
+        ]);
+        return;
+      }
+      
       if (isEditMode && device) {
         const updateRequest: UpdateDeviceRequest = {
           id: device.id,
           name: values.name || null,
           ipAddress: values.ipAddress || null,
           macAddress: values.macAddress || null,
-          frontZoneId: values.frontZoneId,
-          backZoneId: values.backZoneId,
+          frontZoneId: values.frontZoneId || null,
+          backZoneId: values.backZoneId || null,
         };
         onSubmit(updateRequest);
       } else {
@@ -76,8 +85,8 @@ export function DeviceFormModal({
           name: values.name || null,
           ipAddress: values.ipAddress || null,
           macAddress: values.macAddress || null,
-          frontZoneId: values.frontZoneId,
-          backZoneId: values.backZoneId,
+          frontZoneId: values.frontZoneId || null,
+          backZoneId: values.backZoneId || null,
         };
         onSubmit(createRequest);
       }
@@ -148,9 +157,10 @@ export function DeviceFormModal({
         <Form.Item
           name="frontZoneId"
           label="Front Zone"
+          extra="Leave empty for 'Outside'. At least one zone required."
         >
           <Select
-            placeholder="Select front zone (optional)"
+            placeholder="Select front zone (or leave empty for Outside)"
             options={zoneOptions}
             allowClear
             showSearch
@@ -163,9 +173,10 @@ export function DeviceFormModal({
         <Form.Item
           name="backZoneId"
           label="Back Zone"
+          extra="Leave empty for 'Outside'. At least one zone required."
         >
           <Select
-            placeholder="Select back zone (optional)"
+            placeholder="Select back zone (or leave empty for Outside)"
             options={zoneOptions}
             allowClear
             showSearch

@@ -14,6 +14,20 @@ public class KoornikDbContext(DbContextOptions<KoornikDbContext> options) : DbCo
     {
         base.OnModelCreating(modelBuilder);
 
+        // Configure Device entity - zone IDs are optional for border devices
+        modelBuilder.Entity<Device>(entity =>
+        {
+            entity.Property(d => d.FrontZoneId).IsRequired(false);
+            entity.Property(d => d.BackZoneId).IsRequired(false);
+        });
+
+        // Configure Transition entity - zone IDs are optional for border transitions
+        modelBuilder.Entity<Transition>(entity =>
+        {
+            entity.Property(t => t.FromZone).IsRequired(false);
+            entity.Property(t => t.ToZone).IsRequired(false);
+        });
+
         // Add composite index for efficient zone state queries (latest snapshot per zone)
         modelBuilder.Entity<ZoneStateSnapshot>()
             .HasIndex(s => new { s.ZoneId, s.CreatedAt })

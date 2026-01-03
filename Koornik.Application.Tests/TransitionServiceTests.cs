@@ -242,15 +242,31 @@ public class TransitionServiceTests
     }
 
     [Fact]
-    public async Task CreateTransition_WithEmptyFromZoneId_ReturnsValidationError()
+    public async Task CreateTransition_WithNullFromZoneId_SucceedsAsBorderTransition()
     {
-        // Arrange
+        // Arrange - Border device: someone entering from "Outside" to a tracked zone
+        var toZoneId = Guid.NewGuid();
         var request = new CreateTransitionRequest
         {
             DeviceId = Guid.NewGuid(),
-            FromZoneId = Guid.Empty,
-            ToZoneId = Guid.NewGuid()
+            FromZoneId = null,
+            ToZoneId = toZoneId
         };
+
+        var toZone = new Zone { Id = toZoneId, Name = "To Zone", Capacity = 100, CurrentOccupancy = 10 };
+
+        var createdTransition = new Transition
+        {
+            Id = Guid.NewGuid(),
+            DeviceId = request.DeviceId,
+            FromZone = null,
+            ToZone = request.ToZoneId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _zoneRepository.Setup(r => r.GetById(toZoneId)).ReturnsAsync(toZone);
+        _transitionRepository.Setup(r => r.Add(It.IsAny<Transition>())).ReturnsAsync(createdTransition);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
 
         var sut = CreateSut();
 
@@ -258,19 +274,60 @@ public class TransitionServiceTests
         var result = await sut.CreateTransition(request);
 
         // Assert
-        result.IsError.Should().BeTrue();
-        result.Errors.Should().Contain(e => e.Description == "Source zone id should not be empty.");
+        result.IsError.Should().BeFalse();
+        result.Value.FromZoneId.Should().BeNull();
+        result.Value.ToZoneId.Should().Be(toZoneId);
+        toZone.CurrentOccupancy.Should().Be(11); // Incremented from 10 to 11
     }
 
     [Fact]
-    public async Task CreateTransition_WithEmptyToZoneId_ReturnsValidationError()
+    public async Task CreateTransition_WithNullToZoneId_SucceedsAsBorderTransition()
     {
-        // Arrange
+        // Arrange - Border device: someone exiting to "Outside" from a tracked zone
+        var fromZoneId = Guid.NewGuid();
         var request = new CreateTransitionRequest
         {
             DeviceId = Guid.NewGuid(),
-            FromZoneId = Guid.NewGuid(),
-            ToZoneId = Guid.Empty
+            FromZoneId = fromZoneId,
+            ToZoneId = null
+        };
+
+        var fromZone = new Zone { Id = fromZoneId, Name = "From Zone", Capacity = 100, CurrentOccupancy = 5 };
+
+        var createdTransition = new Transition
+        {
+            Id = Guid.NewGuid(),
+            DeviceId = request.DeviceId,
+            FromZone = request.FromZoneId,
+            ToZone = null,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _zoneRepository.Setup(r => r.GetById(fromZoneId)).ReturnsAsync(fromZone);
+        _transitionRepository.Setup(r => r.Add(It.IsAny<Transition>())).ReturnsAsync(createdTransition);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var sut = CreateSut();
+
+        // Act
+        var result = await sut.CreateTransition(request);
+
+        // Assert
+        result.IsError.Should().BeFalse();
+        result.Value.FromZoneId.Should().Be(fromZoneId);
+        result.Value.ToZoneId.Should().BeNull();
+        fromZone.CurrentOccupancy.Should().Be(4); // Decremented from 5 to 4
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithBothZonesNull_ReturnsValidationError()
+    {
+        // Arrange - At least one zone must be specified
+        var request = new CreateTransitionRequest
+        {
+            DeviceId = Guid.NewGuid(),
+            FromZoneId = null,
+            ToZoneId = null
         };
 
         var sut = CreateSut();
@@ -280,18 +337,18 @@ public class TransitionServiceTests
 
         // Assert
         result.IsError.Should().BeTrue();
-        result.Errors.Should().Contain(e => e.Description == "Destination zone id should not be empty.");
+        result.Errors.Should().Contain(e => e.Description == "At least one zone (source or destination) must be specified.");
     }
 
     [Fact]
     public async Task CreateTransition_WithMultipleInvalidFields_ReturnsAllErrors()
     {
-        // Arrange
+        // Arrange - Both zones null is invalid (at least one required)
         var request = new CreateTransitionRequest
         {
             DeviceId = Guid.Empty,
-            FromZoneId = Guid.Empty,
-            ToZoneId = Guid.Empty
+            FromZoneId = null,
+            ToZoneId = null
         };
 
         var sut = CreateSut();
@@ -301,10 +358,9 @@ public class TransitionServiceTests
 
         // Assert
         result.IsError.Should().BeTrue();
-        result.Errors.Should().HaveCount(3);
+        result.Errors.Should().HaveCount(2);
         result.Errors.Should().Contain(e => e.Description == "Device id should not be empty.");
-        result.Errors.Should().Contain(e => e.Description == "Source zone id should not be empty.");
-        result.Errors.Should().Contain(e => e.Description == "Destination zone id should not be empty.");
+        result.Errors.Should().Contain(e => e.Description == "At least one zone (source or destination) must be specified.");
     }
 
     #endregion

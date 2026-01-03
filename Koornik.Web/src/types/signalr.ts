@@ -13,8 +13,8 @@ export interface TransitionEvent {
   deviceName: string;
   macAddress: string;
   direction: TransitionDirection;
-  fromZoneId: string;
-  toZoneId: string;
+  fromZoneId: string | null;
+  toZoneId: string | null;
   timestamp: string;
 }
 

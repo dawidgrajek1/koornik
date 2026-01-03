@@ -7,14 +7,14 @@ export interface Transition {
   id: string;
   deviceId: string;
   createdAt: string;
-  fromZoneId: string;
-  toZoneId: string;
+  fromZoneId: string | null;
+  toZoneId: string | null;
 }
 
 /** Request body for POST /api/v1/transitions */
 export interface CreateTransitionRequest {
   deviceId: string;
-  fromZoneId: string;
-  toZoneId: string;
+  fromZoneId?: string | null;
+  toZoneId?: string | null;
   createdAt?: string | null;
 }

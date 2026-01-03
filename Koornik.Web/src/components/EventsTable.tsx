@@ -153,7 +153,7 @@ export function EventsTable({
   const filteredTransitions = useMemo(() => {
     if (!filterZoneId) return allTransitions;
     return allTransitions.filter(
-      t => t.fromZoneId === filterZoneId || t.toZoneId === filterZoneId
+      t => (t.fromZoneId && t.fromZoneId === filterZoneId) || (t.toZoneId && t.toZoneId === filterZoneId)
     );
   }, [allTransitions, filterZoneId]);
 
@@ -201,13 +201,13 @@ export function EventsTable({
       title: 'Transition',
       key: 'transition',
       render: (_, record) => {
-        const fromName = zoneNameMap.get(record.fromZoneId) || 'Unknown';
-        const toName = zoneNameMap.get(record.toZoneId) || 'Unknown';
+        const fromName = record.fromZoneId ? (zoneNameMap.get(record.fromZoneId) || 'Unknown') : 'Outside';
+        const toName = record.toZoneId ? (zoneNameMap.get(record.toZoneId) || 'Unknown') : 'Outside';
         return (
           <Space size="small">
-            <Text>{fromName}</Text>
+            <Text style={!record.fromZoneId ? { fontStyle: 'italic', color: '#888' } : undefined}>{fromName}</Text>
             <ArrowRightOutlined style={{ color: '#888' }} />
-            <Text>{toName}</Text>
+            <Text style={!record.toZoneId ? { fontStyle: 'italic', color: '#888' } : undefined}>{toName}</Text>
           </Space>
         );
       },

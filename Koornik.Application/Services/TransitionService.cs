@@ -24,14 +24,11 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
             errors.Add(Error.Validation(description: "Device id should not be empty."));
         }
 
-        if (request.FromZoneId == Guid.Empty)
+        // At least one zone must be specified for a valid transition
+        if ((request.FromZoneId is null || request.FromZoneId == Guid.Empty) && 
+            (request.ToZoneId is null || request.ToZoneId == Guid.Empty))
         {
-            errors.Add(Error.Validation(description: "Source zone id should not be empty."));
-        }
-
-        if (request.ToZoneId == Guid.Empty)
-        {
-            errors.Add(Error.Validation(description: "Destination zone id should not be empty."));
+            errors.Add(Error.Validation(description: "At least one zone (source or destination) must be specified."));
         }
 
         if (errors.Count > 0)
@@ -39,32 +36,46 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
             return errors;
         }
 
-        // Fetch the zones to update their CurrentOccupancy
-        var fromZone = await _unitOfWork.Repository<Zone>().GetById(request.FromZoneId);
-        var toZone = await _unitOfWork.Repository<Zone>().GetById(request.ToZoneId);
+        // Fetch zones to update their CurrentOccupancy (only if specified)
+        Zone? fromZone = null;
+        Zone? toZone = null;
 
-        if (fromZone is null)
+        if (request.FromZoneId.HasValue && request.FromZoneId != Guid.Empty)
         {
-            return Error.NotFound(description: "Source zone not found.");
+            fromZone = await _unitOfWork.Repository<Zone>().GetById(request.FromZoneId.Value);
+            if (fromZone is null)
+            {
+                return Error.NotFound(description: "Source zone not found.");
+            }
         }
 
-        if (toZone is null)
+        if (request.ToZoneId.HasValue && request.ToZoneId != Guid.Empty)
         {
-            return Error.NotFound(description: "Destination zone not found.");
+            toZone = await _unitOfWork.Repository<Zone>().GetById(request.ToZoneId.Value);
+            if (toZone is null)
+            {
+                return Error.NotFound(description: "Destination zone not found.");
+            }
         }
 
-        // Update occupancy counts
-        fromZone.CurrentOccupancy = Math.Max(0, fromZone.CurrentOccupancy - 1);
-        toZone.CurrentOccupancy += 1;
+        // Update occupancy counts only for tracked zones
+        if (fromZone is not null)
+        {
+            fromZone.CurrentOccupancy = Math.Max(0, fromZone.CurrentOccupancy - 1);
+            _unitOfWork.Repository<Zone>().Update(fromZone);
+        }
 
-        _unitOfWork.Repository<Zone>().Update(fromZone);
-        _unitOfWork.Repository<Zone>().Update(toZone);
+        if (toZone is not null)
+        {
+            toZone.CurrentOccupancy += 1;
+            _unitOfWork.Repository<Zone>().Update(toZone);
+        }
 
         var transition = await _unitOfWork.Repository<Transition>().Add(new Transition
         {
             DeviceId = request.DeviceId,
-            FromZone = request.FromZoneId,
-            ToZone = request.ToZoneId,
+            FromZone = request.FromZoneId == Guid.Empty ? null : request.FromZoneId,
+            ToZone = request.ToZoneId == Guid.Empty ? null : request.ToZoneId,
             CreatedAt = request.CreatedAt ?? DateTime.UtcNow,
         });
 
@@ -72,7 +83,8 @@ public class TransitionService(IUnitOfWork unitOfWork, ILogger<TransitionService
 
         _logger.LogInformation(
             "Transition created: FromZone {FromZoneId} (occupancy: {FromOccupancy}) -> ToZone {ToZoneId} (occupancy: {ToOccupancy})",
-            fromZone.Id, fromZone.CurrentOccupancy, toZone.Id, toZone.CurrentOccupancy);
+            fromZone?.Id.ToString() ?? "Outside", fromZone?.CurrentOccupancy ?? 0, 
+            toZone?.Id.ToString() ?? "Outside", toZone?.CurrentOccupancy ?? 0);
 
         return transition.ToResponse();
     }

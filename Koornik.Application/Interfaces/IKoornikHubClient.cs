@@ -36,8 +36,8 @@ public record TransitionEvent
     public string DeviceName { get; init; } = string.Empty;
     public string MacAddress { get; init; } = string.Empty;
     public string Direction { get; init; } = string.Empty;
-    public Guid FromZoneId { get; init; }
-    public Guid ToZoneId { get; init; }
+    public Guid? FromZoneId { get; init; }
+    public Guid? ToZoneId { get; init; }
     public DateTime Timestamp { get; init; }
 }
 

@@ -111,7 +111,8 @@ public class MqttMessageHandler
         // Determine FromZone and ToZone based on direction
         // IN = movement from back to front (entering the front zone)
         // OUT = movement from front to back (entering the back zone)
-        Guid fromZoneId, toZoneId;
+        // For border devices (one zone is null), the null zone represents "Outside"
+        Guid? fromZoneId, toZoneId;
         if (transitionPayload.Direction.Equals("IN", StringComparison.OrdinalIgnoreCase))
         {
             fromZoneId = device.BackZoneId;
@@ -165,37 +166,50 @@ public class MqttMessageHandler
         // Broadcast to all clients and specific device/zone groups
         await _notificationService.NotifyTransitionAsync(transitionEvent);
         await _notificationService.NotifyDeviceTransitionAsync(macAddress, transitionEvent);
-        await _notificationService.NotifyZoneEventAsync(fromZoneId, transitionEvent);
-        await _notificationService.NotifyZoneEventAsync(toZoneId, transitionEvent);
-
-        // Fetch updated zones and broadcast occupancy changes
-        var fromZoneResult = await zoneService.GetZoneById(fromZoneId);
-        var toZoneResult = await zoneService.GetZoneById(toZoneId);
-
-        if (!fromZoneResult.IsError)
+        
+        // Only notify zone groups for tracked zones (not for "Outside" / null zones)
+        if (fromZoneId.HasValue)
         {
-            var fromZone = fromZoneResult.Value;
-            await _notificationService.NotifyZoneOccupancyChangedAsync(new ZoneOccupancyChangedEvent
-            {
-                ZoneId = fromZone.Id,
-                ZoneName = fromZone.Name,
-                CurrentOccupancy = fromZone.CurrentOccupancy,
-                Capacity = fromZone.Capacity,
-                Timestamp = timestamp
-            });
+            await _notificationService.NotifyZoneEventAsync(fromZoneId.Value, transitionEvent);
+        }
+        if (toZoneId.HasValue)
+        {
+            await _notificationService.NotifyZoneEventAsync(toZoneId.Value, transitionEvent);
         }
 
-        if (!toZoneResult.IsError)
+        // Fetch updated zones and broadcast occupancy changes (only for tracked zones)
+        if (fromZoneId.HasValue)
         {
-            var toZone = toZoneResult.Value;
-            await _notificationService.NotifyZoneOccupancyChangedAsync(new ZoneOccupancyChangedEvent
+            var fromZoneResult = await zoneService.GetZoneById(fromZoneId.Value);
+            if (!fromZoneResult.IsError)
             {
-                ZoneId = toZone.Id,
-                ZoneName = toZone.Name,
-                CurrentOccupancy = toZone.CurrentOccupancy,
-                Capacity = toZone.Capacity,
-                Timestamp = timestamp
-            });
+                var fromZone = fromZoneResult.Value;
+                await _notificationService.NotifyZoneOccupancyChangedAsync(new ZoneOccupancyChangedEvent
+                {
+                    ZoneId = fromZone.Id,
+                    ZoneName = fromZone.Name,
+                    CurrentOccupancy = fromZone.CurrentOccupancy,
+                    Capacity = fromZone.Capacity,
+                    Timestamp = timestamp
+                });
+            }
+        }
+
+        if (toZoneId.HasValue)
+        {
+            var toZoneResult = await zoneService.GetZoneById(toZoneId.Value);
+            if (!toZoneResult.IsError)
+            {
+                var toZone = toZoneResult.Value;
+                await _notificationService.NotifyZoneOccupancyChangedAsync(new ZoneOccupancyChangedEvent
+                {
+                    ZoneId = toZone.Id,
+                    ZoneName = toZone.Name,
+                    CurrentOccupancy = toZone.CurrentOccupancy,
+                    Capacity = toZone.Capacity,
+                    Timestamp = timestamp
+                });
+            }
         }
     }
 
