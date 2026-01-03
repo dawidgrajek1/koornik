@@ -42,6 +42,20 @@ function getOccupancyColor(percentage: number): string {
   return '#52c41a'; // Green - good
 }
 
+/** Click handler component to deselect zone when clicking empty map space */
+interface MapClickHandlerProps {
+  onMapClick: () => void;
+}
+
+function MapClickHandler({ onMapClick }: MapClickHandlerProps) {
+  useMapEvents({
+    click: () => {
+      onMapClick();
+    },
+  });
+  return null;
+}
+
 /** Drawing overlay component for creating polygon zones */
 interface DrawingOverlayProps {
   drawingZoneId: string;
@@ -223,6 +237,11 @@ export function FloorPlanMap({
       maxZoom={2}
     >
       <ImageOverlay url={FLOOR_PLAN_URL} bounds={bounds} />
+
+      {/* Click handler to deselect zone when clicking empty space (only when not drawing) */}
+      {!drawingZoneId && selectedZoneId && (
+        <MapClickHandler onMapClick={() => onZoneClick(null)} />
+      )}
 
       {/* Render zone polygons with occupancy tooltips */}
       {zonesWithGeoJson.map(zone => {

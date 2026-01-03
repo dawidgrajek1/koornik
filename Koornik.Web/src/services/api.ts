@@ -3,8 +3,8 @@
  */
 
 import { API_BASE_URL } from '../config/env';
-import type { Device } from '../types/device';
-import type { Zone, ZoneState, UpdateZoneRequest } from '../types/zone';
+import type { Device, CreateDeviceRequest, UpdateDeviceRequest } from '../types/device';
+import type { Zone, ZoneState, CreateZoneRequest, UpdateZoneRequest } from '../types/zone';
 import type { Transition } from '../types/transition';
 import type { Polygon } from 'geojson';
 
@@ -69,6 +69,38 @@ export async function getDeviceByMac(macAddress: string): Promise<Device> {
 /** Fetch a device by zone ID */
 export async function getDeviceByZone(zoneId: string): Promise<Device> {
   return fetchApi<Device>(`/api/v1/devices/by-zone/${zoneId}`);
+}
+
+/** Create a new device */
+export async function createDevice(request: CreateDeviceRequest): Promise<Device> {
+  return fetchApi<Device>('/api/v1/devices', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/** Update a device */
+export async function updateDevice(request: UpdateDeviceRequest): Promise<Device> {
+  return fetchApi<Device>(`/api/v1/devices/${request.id}`, {
+    method: 'PUT',
+    body: JSON.stringify(request),
+  });
+}
+
+/** Create a new zone */
+export async function createZone(request: CreateZoneRequest): Promise<Zone> {
+  const zone = await fetchApi<Zone>('/api/v1/zones', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+  return parseZoneGeojson(zone);
+}
+
+/** Delete a device */
+export async function deleteDevice(id: string): Promise<void> {
+  await fetchApi<void>(`/api/v1/devices/${id}`, {
+    method: 'DELETE',
+  });
 }
 
 // ============================================================================

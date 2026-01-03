@@ -123,7 +123,7 @@ export function DeviceDetailDrawer({
                   title="Occupancy"
                   value={frontZoneState.occupancyCount}
                   suffix={`/ ${frontZoneState.capacity}`}
-                  valueStyle={{ fontSize: '1rem' }}
+                  styles={{ content: { fontSize: '1rem' } }}
                 />
               )}
             </div>
@@ -143,7 +143,7 @@ export function DeviceDetailDrawer({
                   title="Occupancy"
                   value={backZoneState.occupancyCount}
                   suffix={`/ ${backZoneState.capacity}`}
-                  valueStyle={{ fontSize: '1rem' }}
+                  styles={{ content: { fontSize: '1rem' } }}
                 />
               )}
             </div>
@@ -184,7 +184,7 @@ export function DeviceDetailDrawer({
                   title="Front Sensor"
                   value={distanceReading.frontDistance}
                   suffix="mm"
-                  valueStyle={{ color: '#1890ff' }}
+                  styles={{ content: { color: '#1890ff' } }}
                 />
               </Col>
               <Col span={12}>
@@ -192,7 +192,7 @@ export function DeviceDetailDrawer({
                   title="Back Sensor"
                   value={distanceReading.backDistance}
                   suffix="mm"
-                  valueStyle={{ color: '#1890ff' }}
+                  styles={{ content: { color: '#1890ff' } }}
                 />
               </Col>
             </Row>

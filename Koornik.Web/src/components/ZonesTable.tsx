@@ -2,16 +2,21 @@
  * Zones table component displaying zone configuration with drawing capability.
  */
 
-import { Table, Button, Tag, Space, Typography, Tooltip } from 'antd';
-import { EditOutlined, CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useState, useCallback } from 'react';
+import { Table, Button, Tag, Space, Typography, Tooltip, App } from 'antd';
+import { EditOutlined, CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import type { Zone, ZoneState } from '../types';
+import type { Zone, ZoneState, Device, CreateZoneRequest, UpdateZoneRequest } from '../types';
+import { ZoneFormModal, showDeleteConfirm, findDevicesReferencingZone } from './admin';
+import { createZone, updateZone, deleteZone } from '../services/api';
 
 const { Text } = Typography;
 
 interface ZonesTableProps {
   /** List of zones */
   zones: Zone[];
+  /** List of devices (for zone reference check on delete) */
+  devices: Device[];
   /** Current zone states (occupancy data) */
   zoneStates: Map<string, ZoneState>;
   /** Currently selected zone ID */
@@ -24,17 +29,78 @@ interface ZonesTableProps {
   onDrawZone: (zoneId: string) => void;
   /** Called when clear geoJson button is clicked */
   onClearZoneGeoJson: (zoneId: string) => void;
+  /** Called when zones data should be refreshed */
+  onRefresh: () => void;
 }
 
 export function ZonesTable({
   zones,
+  devices,
   zoneStates,
   selectedZoneId,
   drawingZoneId,
   onZoneSelect,
   onDrawZone,
   onClearZoneGeoJson,
+  onRefresh,
 }: ZonesTableProps) {
+  const { message } = App.useApp();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingZone, setEditingZone] = useState<Zone | undefined>(undefined);
+  const [modalLoading, setModalLoading] = useState(false);
+
+  const handleAddClick = useCallback(() => {
+    setEditingZone(undefined);
+    setModalOpen(true);
+  }, []);
+
+  const handleEditClick = useCallback((zone: Zone) => {
+    setEditingZone(zone);
+    setModalOpen(true);
+  }, []);
+
+  const handleDeleteClick = useCallback((zone: Zone) => {
+    const referencingDevices = findDevicesReferencingZone(zone.id, devices);
+    showDeleteConfirm({
+      type: 'zone',
+      name: zone.name || `Zone ${zone.id.slice(0, 8)}...`,
+      referencingDevices,
+      onConfirm: async () => {
+        try {
+          await deleteZone(zone.id);
+          message.success('Zone deleted successfully');
+          onRefresh();
+        } catch (error) {
+          message.error(`Failed to delete zone: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      },
+    });
+  }, [devices, message, onRefresh]);
+
+  const handleModalSubmit = useCallback(async (values: CreateZoneRequest | UpdateZoneRequest) => {
+    setModalLoading(true);
+    try {
+      if ('id' in values) {
+        await updateZone(values);
+        message.success('Zone updated successfully');
+      } else {
+        await createZone(values);
+        message.success('Zone created successfully');
+      }
+      setModalOpen(false);
+      onRefresh();
+    } catch (error) {
+      message.error(`Failed to save zone: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setModalLoading(false);
+    }
+  }, [message, onRefresh]);
+
+  const handleModalCancel = useCallback(() => {
+    setModalOpen(false);
+    setEditingZone(undefined);
+  }, []);
+
   const columns: ColumnsType<Zone> = [
     {
       title: 'Name',
@@ -87,10 +153,20 @@ export function ZonesTable({
     {
       title: 'Actions',
       key: 'actions',
-      width: 140,
+      width: 180,
       fixed: 'right',
       render: (_, zone) => (
         <Space size="small" wrap>
+          <Tooltip title="Edit zone">
+            <Button
+              size="small"
+              icon={<SettingOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditClick(zone);
+              }}
+            />
+          </Tooltip>
           <Tooltip title={zone.geoJson ? 'Redraw zone boundary' : 'Draw zone boundary'}>
             <Button
               type={drawingZoneId === zone.id ? 'primary' : 'default'}
@@ -106,10 +182,8 @@ export function ZonesTable({
           {zone.geoJson && (
             <Tooltip title="Remove from map">
               <Button
-                type="primary"
                 size="small"
                 icon={<DeleteOutlined />}
-                danger
                 onClick={(e) => {
                   e.stopPropagation();
                   onClearZoneGeoJson(zone.id);
@@ -117,6 +191,17 @@ export function ZonesTable({
               />
             </Tooltip>
           )}
+          <Tooltip title="Delete zone">
+            <Button
+              size="small"
+              icon={<DeleteOutlined />}
+              danger
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteClick(zone);
+              }}
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -136,11 +221,21 @@ export function ZonesTable({
         <Text strong style={{ fontSize: 16, color: '#fff' }}>
           Zones
         </Text>
-        {drawingZoneId && (
-          <Tag color="processing">
-            Drawing mode active
-          </Tag>
-        )}
+        <Space>
+          {drawingZoneId && (
+            <Tag color="processing">
+              Drawing mode active
+            </Tag>
+          )}
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={handleAddClick}
+          >
+            Add Zone
+          </Button>
+        </Space>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
@@ -160,6 +255,14 @@ export function ZonesTable({
           })}
         />
       </div>
+
+      <ZoneFormModal
+        open={modalOpen}
+        zone={editingZone}
+        loading={modalLoading}
+        onSubmit={handleModalSubmit}
+        onCancel={handleModalCancel}
+      />
     </div>
   );
 }

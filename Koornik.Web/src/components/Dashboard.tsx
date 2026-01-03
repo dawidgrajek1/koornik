@@ -49,35 +49,35 @@ export function Dashboard() {
   } = useKoornikHub();
 
   // Load initial data
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        setError(null);
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        const [devicesData, zonesData] = await Promise.all([
-          getDevices(),
-          getZones(),
-        ]);
+      const [devicesData, zonesData] = await Promise.all([
+        getDevices(),
+        getZones(),
+      ]);
 
-        console.log('Loaded zones:', zonesData);
+      console.log('Loaded zones:', zonesData);
 
-        setDevices(devicesData);
-        setZones(zonesData);
+      setDevices(devicesData);
+      setZones(zonesData);
 
-        // Load zone states
-        const states = await getAllZoneStates(zonesData);
-        setZoneStates(states);
-      } catch (err) {
-        console.error('Failed to load data:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load data');
-      } finally {
-        setLoading(false);
-      }
+      // Load zone states
+      const states = await getAllZoneStates(zonesData);
+      setZoneStates(states);
+    } catch (err) {
+      console.error('Failed to load data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setLoading(false);
     }
-
-    loadData();
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Poll zone states periodically
   useEffect(() => {
@@ -290,12 +290,14 @@ export function Dashboard() {
                 <Panel defaultSize="40%" min="300px" style={{ padding: 16 }}>
                   <ZonesTable
                     zones={zones}
+                    devices={devices}
                     zoneStates={zoneStates}
                     selectedZoneId={selectedZoneId}
                     drawingZoneId={drawingZoneId}
                     onZoneSelect={handleZoneClick}
                     onDrawZone={handleDrawZone}
                     onClearZoneGeoJson={handleClearZoneGeoJson}
+                    onRefresh={loadData}
                   />
                 </Panel>
               </Splitter>
@@ -314,8 +316,10 @@ export function Dashboard() {
         >
           <DevicePanel
             devices={devices}
+            zones={zones}
             deviceStatuses={deviceStatuses}
             onDeviceClick={handleDeviceClick}
+            onRefresh={loadData}
           />
         </Sider>
       </Layout>

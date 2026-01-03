@@ -8,3 +8,6 @@ export { EventsTable } from './EventsTable';
 export { ZonesTable } from './ZonesTable';
 export { DevicePanel } from './DevicePanel';
 export { DeviceDetailDrawer } from './DeviceDetailDrawer';
+
+// Admin components
+export * from './admin';
