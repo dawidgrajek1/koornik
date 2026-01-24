@@ -38,7 +38,7 @@ export interface UseKoornikHubResult {
   clearTransitions: () => void;
 }
 
-export function useKoornikHub(): UseKoornikHubResult {
+export function useKoornikHub(options?: { onDeviceStatus?: (event: DeviceStatusEvent) => void }): UseKoornikHubResult {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [transitions, setTransitions] = useState<TransitionEvent[]>([]);
   const [deviceStatuses, setDeviceStatuses] = useState<Map<string, DeviceStatusEvent>>(new Map());
@@ -70,11 +70,22 @@ export function useKoornikHub(): UseKoornikHubResult {
     });
 
     connection.on('OnDeviceStatus', (event: DeviceStatusEvent) => {
+      console.log('Received DeviceStatus event:', event);
+
       setDeviceStatuses(prev => {
         const next = new Map(prev);
         next.set(event.macAddress, event);
         return next;
       });
+
+      // Notify consumer about each DeviceStatus event (e.g. to prompt on unknown devices)
+      try {
+        
+        options?.onDeviceStatus?.(event);
+      } catch (err) {
+        // Swallow consumer errors to avoid breaking the hub
+        console.error('onDeviceStatus handler threw:', err);
+      }
     });
 
     connection.on('OnDistanceReading', (event: DistanceReadingEvent) => {

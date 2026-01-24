@@ -23,6 +23,8 @@ interface DeviceFormModalProps {
   zones: Zone[];
   /** Loading state for submit button */
   loading?: boolean;
+  /** Initial form values used when creating a device (create mode) */
+  initialValues?: Partial<DeviceFormValues>;
   /** Called when form is submitted */
   onSubmit: (values: CreateDeviceRequest | UpdateDeviceRequest) => void;
   /** Called when modal is cancelled */
@@ -34,6 +36,7 @@ export function DeviceFormModal({
   device,
   zones,
   loading = false,
+  initialValues,
   onSubmit,
   onCancel,
 }: DeviceFormModalProps) {
@@ -51,11 +54,19 @@ export function DeviceFormModal({
           frontZoneId: device.frontZoneId || undefined,
           backZoneId: device.backZoneId || undefined,
         });
+      } else if (initialValues) {
+        form.setFieldsValue({
+          name: initialValues.name ?? '',
+          ipAddress: initialValues.ipAddress ?? '',
+          macAddress: initialValues.macAddress ?? '',
+          frontZoneId: initialValues.frontZoneId ?? undefined,
+          backZoneId: initialValues.backZoneId ?? undefined,
+        });
       } else {
         form.resetFields();
       }
     }
-  }, [open, device, form]);
+  }, [open, device, form, initialValues]);
 
   const handleOk = async () => {
     try {

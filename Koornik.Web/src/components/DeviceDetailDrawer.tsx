@@ -3,7 +3,9 @@
  */
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Drawer, Descriptions, Badge, Statistic, Row, Col, Typography, Divider, Card, Button, Space, App } from 'antd';
+import { Drawer, Descriptions, Badge, Statistic, Row, Col, Typography, Divider, Card, Button, Space, App, Alert } from 'antd';
+import { DeviceFormModal } from './admin/DeviceFormModal';
+import { createDevice } from '../services/api';
 import { WifiOutlined, DashboardOutlined, EnvironmentOutlined, ToolOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import type { Device, Zone, ZoneState, DeviceStatusEvent, DistanceReadingEvent } from '../types';
 import { calibrateDevice, setDistanceStream } from '../services/api';
@@ -27,6 +29,8 @@ interface DeviceDetailDrawerProps {
   onSubscribe: (macAddress: string) => void;
   /** Called to unsubscribe from device distance readings */
   onUnsubscribe: (macAddress: string) => void;
+  /** Optional callback called after a device is created (so parent can refresh list) */
+  onDeviceSaved?: () => void;
 }
 
 export function DeviceDetailDrawer({
@@ -38,13 +42,37 @@ export function DeviceDetailDrawer({
   onClose,
   onSubscribe,
   onUnsubscribe,
+  onDeviceSaved,
 }: DeviceDetailDrawerProps) {
   const { message } = App.useApp();
   const [calibrating, setCalibrating] = useState(false);
   const [streamLoading, setStreamLoading] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+
+  const handleCreateSubmit = useCallback(async (values: any) => {
+    setCreateLoading(true);
+    try {
+      await createDevice(values);
+      message.success('Device created successfully');
+      setCreateModalOpen(false);
+      onDeviceSaved?.();
+    } catch (err) {
+      message.error(`Failed to create device: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setCreateLoading(false);
+    }
+  }, [message, onDeviceSaved]);
+
+  const handleCreateCancel = useCallback(() => {
+    setCreateModalOpen(false);
+  }, []);
 
   const handleCalibrate = useCallback(async () => {
-    if (!device) return;
+    if (!device || !device.id) {
+      message.error('Device must be registered to calibrate.');
+      return;
+    }
     setCalibrating(true);
     try {
       await calibrateDevice(device.id);
@@ -57,7 +85,10 @@ export function DeviceDetailDrawer({
   }, [device, message]);
 
   const handleDisableDistanceStream = useCallback(async () => {
-    if (!device) return;
+    if (!device || !device.id) {
+      message.error('Device must be registered to change streaming.');
+      return;
+    }
     setStreamLoading(true);
     try {
       await setDistanceStream(device.id, false);
@@ -159,6 +190,13 @@ export function DeviceDetailDrawer({
     >
       {device && (
         <>
+          {!device.id && (
+            <div style={{ marginTop: 12 }}>
+              <Button type="primary" onClick={() => setCreateModalOpen(true)} block>
+                Add device to system
+              </Button>
+            </div>
+          )}
           {/* Device Info */}
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="Name">
@@ -175,12 +213,23 @@ export function DeviceDetailDrawer({
             </Descriptions.Item>
           </Descriptions>
 
+          {!device.id && (
+            <div style={{ marginTop: 12 }}>
+              <Alert
+                message="Unregistered device"
+                description="This device is not registered in the system. You can view live readings but cannot perform device-level actions until it's added."
+                type="warning"
+                showIcon
+              />
+            </div>
+          )}
+
           {/* Device Actions */}
           <Space style={{ marginTop: 16, width: '100%' }} direction="vertical">
             <Button
               icon={<ToolOutlined />}
               loading={calibrating}
-              disabled={isDeviceOffline}
+              disabled={isDeviceOffline || !device.id}
               onClick={handleCalibrate}
               block
             >
@@ -189,7 +238,7 @@ export function DeviceDetailDrawer({
             <Button
               icon={<ThunderboltOutlined />}
               loading={streamLoading}
-              disabled={isDeviceOffline}
+              disabled={isDeviceOffline || !device.id}
               onClick={handleDisableDistanceStream}
               block
             >
@@ -309,6 +358,16 @@ export function DeviceDetailDrawer({
           )}
         </>
       )}
+
+      <DeviceFormModal
+        open={createModalOpen}
+        device={undefined}
+        zones={zones}
+        loading={createLoading}
+        initialValues={{ macAddress: device?.macAddress ?? '' }}
+        onSubmit={handleCreateSubmit}
+        onCancel={handleCreateCancel}
+      />
     </Drawer>
   );
 }

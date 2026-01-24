@@ -2,8 +2,8 @@
  * Main dashboard layout combining floor plan, events table, zones table, and device panel.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { Layout, Typography, Badge, Spin, Alert, App, Splitter } from 'antd';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Layout, Typography, Badge, Spin, Alert, App, Splitter, Modal } from 'antd';
 import { WifiOutlined, DisconnectOutlined, LoadingOutlined } from '@ant-design/icons';
 import type { Polygon } from 'geojson';
 import { FloorPlanMap } from './FloorPlanMap';
@@ -38,6 +38,44 @@ export function Dashboard() {
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [drawingZoneId, setDrawingZoneId] = useState<string | null>(null);
 
+  // Track MACs we've already prompted about to avoid duplicate prompts
+  const promptedMacsRef = useRef<Set<string>>(new Set());
+
+  // Ref to the subscribe function from the hub so callback doesn't close over stale value
+  const subscribeToDeviceRef = useRef<((mac: string) => Promise<void>) | null>(null);
+
+  // Handler invoked for every DeviceStatus event from the hub
+  const handleHubDeviceStatus = useCallback((event: any) => {
+    const mac = event?.macAddress;
+    if (!mac) return;
+
+    // If we already know this device, or we've recently prompted for it, ignore
+    const known = devices.some(d => d.macAddress === mac);
+    if (known || promptedMacsRef.current.has(mac)) return;
+
+    // Mark as prompted to avoid duplicates
+    promptedMacsRef.current.add(mac);
+
+    Modal.confirm({
+      title: 'Unknown device detected',
+      content: `Device with MAC ${mac} reported status. Add device and open details?`,
+      onOk: async () => {
+        // Create a minimal Device-like object and open the drawer
+        const minimalDevice = ({ macAddress: mac } as unknown) as Device;
+        setSelectedDevice(minimalDevice);
+        try {
+          await subscribeToDeviceRef.current?.(mac);
+        } catch (err) {
+          console.error('Failed to subscribe to device after opening drawer:', err);
+        }
+      },
+      onCancel: () => {
+        // remove from prompted set after cancellation so future events can re-prompt
+        promptedMacsRef.current.delete(mac);
+      }
+    });
+  }, [devices]);
+
   // SignalR hook
   const {
     connectionState,
@@ -46,7 +84,12 @@ export function Dashboard() {
     distanceReading,
     subscribeToDevice,
     unsubscribeFromDevice,
-  } = useKoornikHub();
+  } = useKoornikHub({ onDeviceStatus: handleHubDeviceStatus });
+
+  // Keep a ref to the subscribe function for the modal handler
+  useEffect(() => {
+    subscribeToDeviceRef.current = subscribeToDevice;
+  }, [subscribeToDevice]);
 
   // Load initial data
   const loadData = useCallback(async () => {
@@ -338,6 +381,7 @@ export function Dashboard() {
         onClose={handleCloseDeviceDrawer}
         onSubscribe={subscribeToDevice}
         onUnsubscribe={unsubscribeFromDevice}
+        onDeviceSaved={loadData}
       />
     </Layout>
   );
