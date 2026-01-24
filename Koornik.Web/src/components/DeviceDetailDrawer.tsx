@@ -29,8 +29,9 @@ interface DeviceDetailDrawerProps {
   onSubscribe: (macAddress: string) => void;
   /** Called to unsubscribe from device distance readings */
   onUnsubscribe: (macAddress: string) => void;
-  /** Optional callback called after a device is created (so parent can refresh list) */
-  onDeviceSaved?: () => void;
+  /** Optional callback called after a device is created (so parent can refresh list).
+   * If provided, the created `Device` will be passed to the callback. */
+  onDeviceSaved?: (device?: Device) => void;
 }
 
 export function DeviceDetailDrawer({
@@ -53,10 +54,11 @@ export function DeviceDetailDrawer({
   const handleCreateSubmit = useCallback(async (values: any) => {
     setCreateLoading(true);
     try {
-      await createDevice(values);
+      const created = await createDevice(values);
       message.success('Device created successfully');
       setCreateModalOpen(false);
-      onDeviceSaved?.();
+      // Pass created device back to parent so it can replace the minimal device in the drawer
+      onDeviceSaved?.(created);
     } catch (err) {
       message.error(`Failed to create device: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
@@ -191,7 +193,7 @@ export function DeviceDetailDrawer({
       {device && (
         <>
           {!device.id && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginBottom: 12, marginTop: 12 }}>
               <Button type="primary" onClick={() => setCreateModalOpen(true)} block>
                 Add device to system
               </Button>

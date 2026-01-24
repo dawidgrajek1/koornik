@@ -55,7 +55,7 @@ export function Dashboard() {
 
     // Mark as prompted to avoid duplicates
     promptedMacsRef.current.add(mac);
-
+    
     Modal.confirm({
       title: 'Unknown device detected',
       content: `Device with MAC ${mac} reported status. Add device and open details?`,
@@ -68,10 +68,6 @@ export function Dashboard() {
         } catch (err) {
           console.error('Failed to subscribe to device after opening drawer:', err);
         }
-      },
-      onCancel: () => {
-        // remove from prompted set after cancellation so future events can re-prompt
-        promptedMacsRef.current.delete(mac);
       }
     });
   }, [devices]);
@@ -381,7 +377,13 @@ export function Dashboard() {
         onClose={handleCloseDeviceDrawer}
         onSubscribe={subscribeToDevice}
         onUnsubscribe={unsubscribeFromDevice}
-        onDeviceSaved={loadData}
+        onDeviceSaved={(createdDevice) => {
+          // Refresh device list and replace the minimal device with the created one
+          loadData();
+          if (createdDevice) {
+            setSelectedDevice(createdDevice);
+          }
+        }}
       />
     </Layout>
   );

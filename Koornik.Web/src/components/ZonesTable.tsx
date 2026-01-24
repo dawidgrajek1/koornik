@@ -155,8 +155,14 @@ export function ZonesTable({
       key: 'actions',
       width: 180,
       fixed: 'right',
+      onCell: (zone) => ({
+        style: {
+          background: selectedZoneId === zone.id ? '#177ddc22' : 'transparent',
+          padding: 0,
+        },
+      }),
       render: (_, zone) => (
-        <Space size="small" wrap>
+        <Space size="small" wrap style={{ background: 'transparent', padding: 0 }}>
           <Tooltip title="Edit zone">
             <Button
               size="small"
