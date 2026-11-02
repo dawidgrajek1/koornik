@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Koornik API exposes a SignalR hub for real-time IoT device events. Clients can connect to receive live updates about device transitions, status changes, and distance readings without polling.
+The Koornik API exposes a SignalR hub for real-time IoT device events. Clients can connect to receive live updates about device transitions, status changes, distance readings, and zone occupancy without polling.
 
 ## Connection
 
@@ -67,6 +67,21 @@ Called when distance sensor readings are received. This is a high-frequency even
 }
 ```
 
+### `OnZoneOccupancyChanged`
+
+Called after a transition changes a zone's occupancy. One event is sent for each zone involved (the zone left and the zone entered). Border devices have "Outside" on one side, which isn't a tracked zone, so they produce a single event.
+
+**Payload:**
+```json
+{
+  "zoneId": "guid",
+  "zoneName": "string",
+  "currentOccupancy": "number (people currently in the zone)",
+  "capacity": "number (maximum allowed occupancy)",
+  "timestamp": "ISO 8601 datetime (UTC)"
+}
+```
+
 ## Server Methods (Invoked by Frontend)
 
 These are methods that clients can call on the hub to manage subscriptions.
@@ -114,6 +129,7 @@ Unsubscribe from a specific zone's events.
 | `OnTransition` | All connected clients + device group + both zone groups |
 | `OnDeviceStatus` | All connected clients |
 | `OnDistanceReading` | Device group only (subscribers) |
+| `OnZoneOccupancyChanged` | All connected clients + zone group |
 
 ## JavaScript/TypeScript Client Example
 
@@ -147,6 +163,14 @@ interface DistanceReadingEvent {
   timestamp: string;
 }
 
+interface ZoneOccupancyChangedEvent {
+  zoneId: string;
+  zoneName: string;
+  currentOccupancy: number;
+  capacity: number;
+  timestamp: string;
+}
+
 // Create connection
 const connection = new signalR.HubConnectionBuilder()
   .withUrl("/hubs/koornik")
@@ -166,6 +190,10 @@ connection.on("OnDeviceStatus", (event: DeviceStatusEvent) => {
 
 connection.on("OnDistanceReading", (event: DistanceReadingEvent) => {
   console.log(`Distance: front=${event.frontDistance}mm, back=${event.backDistance}mm`);
+});
+
+connection.on("OnZoneOccupancyChanged", (event: ZoneOccupancyChangedEvent) => {
+  console.log(`${event.zoneName}: ${event.currentOccupancy}/${event.capacity}`);
 });
 
 // Start connection
