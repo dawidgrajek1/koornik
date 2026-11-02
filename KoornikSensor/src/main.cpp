@@ -110,7 +110,6 @@ bool distanceStreamEnabled = false;
 volatile bool restartRequested = false;
 unsigned long restartRequestedAt = 0;
 
-// ==================== HTML PAGE ====================
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
@@ -381,7 +380,6 @@ const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-// ==================== FUNCTION DECLARATIONS ====================
 void setupPins();
 void loadPreferences();
 void savePreferences();
@@ -399,7 +397,6 @@ void updateLED();
 void publishStatus();
 ReadingStatus readSensor(Adafruit_VL53L0X& sensor, int& distance);
 
-// ==================== SETUP ====================
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -436,7 +433,6 @@ void setup() {
     }
 }
 
-// ==================== MAIN LOOP ====================
 void loop() {
     updateLED();
     
@@ -465,7 +461,6 @@ void loop() {
     }
 }
 
-// ==================== PIN SETUP ====================
 void setupPins() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW);
@@ -473,7 +468,6 @@ void setupPins() {
     pinMode(RESET_PIN, INPUT_PULLUP);
 }
 
-// ==================== PREFERENCES ====================
 void loadPreferences() {
     preferences.begin("tof-config", true);  // Read-only
     savedSSID = preferences.getString("ssid", "");
@@ -519,7 +513,6 @@ void clearPreferences() {
     Serial.println("Preferences cleared");
 }
 
-// ==================== WIFI ====================
 String getMacAddressClean() {
     String mac = WiFi.macAddress();
     mac.replace(":", "");
@@ -589,7 +582,6 @@ void startAPMode() {
     setupWebServer();
 }
 
-// ==================== WEB SERVER ====================
 void setupWebServer() {
     // Serve main page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -664,7 +656,6 @@ void setupWebServer() {
     Serial.println("Web server started");
 }
 
-// ==================== MQTT ====================
 void setupMQTT() {
     if (savedMqttInsecure) {
         Serial.println("WARNING: MQTT TLS disabled - traffic and credentials are sent in plain text");
@@ -785,7 +776,6 @@ void reconnectMQTT() {
     }
 }
 
-// ==================== SENSORS ====================
 void initSensors() {
     Serial.println("Initializing I2C buses...");
     
@@ -913,7 +903,6 @@ ReadingStatus readSensor(Adafruit_VL53L0X& sensor, int& distance) {
     return measure.RangeStatus == 0 ? READING_VALID : READING_POOR;
 }
 
-// ==================== STATUS PUBLISHING ====================
 void publishStatus() {
     if (!mqtt.connected()) return;
     
@@ -928,7 +917,6 @@ void publishStatus() {
     mqtt.publish(topicStatus.c_str(), statusJson.c_str());
 }
 
-// ==================== DIRECTION DETECTION ====================
 void detectDirection() {
     int distFront, distBack;
     // Poor-quality readings still count for detection (e.g. dark clothing gives a weak signal)
@@ -1001,7 +989,6 @@ void detectDirection() {
     }
 }
 
-// ==================== LED STATUS ====================
 void updateLED() {
     unsigned long now = millis();
     
