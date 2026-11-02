@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 #include <Adafruit_VL53L0X.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
@@ -18,7 +20,15 @@
 
 // ==================== CONFIGURATION ====================
 #define AP_SSID "ToF-Setup"
-#define MQTT_PORT 1883
+// AP_PASSWORD is injected at build time from the KOORNIK_AP_PASSWORD environment variable (see platformio.ini)
+#ifndef AP_PASSWORD
+#error "AP_PASSWORD is not defined - set KOORNIK_AP_PASSWORD before building"
+#endif
+static_assert(sizeof(AP_PASSWORD) - 1 >= 8 && sizeof(AP_PASSWORD) - 1 <= 63,
+              "KOORNIK_AP_PASSWORD must be 8-63 characters (WPA2 requirement)");
+
+#define MQTT_PORT_TLS 8883
+#define MQTT_PORT_PLAIN 1883
 #define MQTT_TOPIC_PREFIX "koornik"
 
 #define DEFAULT_THRESHOLD 1000       // Default detection threshold in mm
@@ -26,6 +36,12 @@
 #define STATUS_PUBLISH_INTERVAL 10000 // Status publish interval in ms
 #define CALIBRATION_MARGIN 100      // Margin to subtract from calibrated distance
 #define CALIBRATION_SAMPLES 10      // Number of samples for calibration
+#define CALIBRATION_MIN_VALID 7     // Minimum in-range samples per sensor for calibration to succeed
+static_assert(CALIBRATION_MIN_VALID <= CALIBRATION_SAMPLES, "CALIBRATION_MIN_VALID must not exceed CALIBRATION_SAMPLES");
+#define MIN_THRESHOLD 50            // Lowest allowed detection threshold in mm
+#define MAX_THRESHOLD 2000          // Highest allowed detection threshold in mm (VL53L0X max range)
+#define DIST_OUT_OF_RANGE 9999      // Reported distance when a reading is invalid/out of range
+#define RESTART_DELAY 1000          // Delay before restarting after saving config, so the HTTP response is sent
 #define DETECTION_TIMEOUT 2000      // Timeout for direction detection in ms
 #define DETECTION_COOLDOWN 1000     // Cooldown after detection before allowing new detection
 #define MIN_TRIGGER_INTERVAL 50     // Minimum time between first and second sensor trigger (ms)
@@ -43,14 +59,21 @@ TwoWire I2C_1 = TwoWire(1);
 Adafruit_VL53L0X sensorFront;
 Adafruit_VL53L0X sensorBack;
 
-WiFiClient espClient;
-PubSubClient mqtt(espClient);
+WiFiClient plainClient;
+WiFiClientSecure secureClient;
+PubSubClient mqtt;
 AsyncWebServer server(80);
 Preferences preferences;
 
 // ==================== STATE VARIABLES ====================
 enum DeviceMode { MODE_AP, MODE_NORMAL };
 enum DetectionState { IDLE, FRONT_FIRST, BACK_FIRST, COOLDOWN };
+enum ReadingStatus {
+    READING_VALID,          // Range status 0: good measurement
+    READING_POOR,           // Range status 1-3 (sigma/signal/min-range fail): usable for detection only
+    READING_OUT_OF_RANGE,   // Range status 4: nothing within range
+    READING_ERROR           // Sensor communication failed
+};
 
 DeviceMode deviceMode = MODE_NORMAL;
 DetectionState detectionState = IDLE;
@@ -58,6 +81,11 @@ DetectionState detectionState = IDLE;
 String savedSSID = "";
 String savedPassword = "";
 String savedMqttBroker = "";
+uint16_t savedMqttPort = MQTT_PORT_TLS;
+String savedMqttUser = "";
+String savedMqttPassword = "";
+String savedMqttCaCert = "";        // PEM CA certificate used to verify the broker
+bool savedMqttInsecure = false;     // true = plain TCP without TLS (development only)
 
 // MAC address (without colons) for topic identification
 String deviceMac = "";
@@ -79,6 +107,10 @@ unsigned long lastStatusPublish = 0;
 bool ledState = false;
 bool sensorsInitialized = false;
 bool distanceStreamEnabled = false;
+
+// Set by the async web handler; the restart itself happens in loop()
+volatile bool restartRequested = false;
+unsigned long restartRequestedAt = 0;
 
 // ==================== HTML PAGE ====================
 const char index_html[] PROGMEM = R"rawliteral(
@@ -133,7 +165,7 @@ const char index_html[] PROGMEM = R"rawliteral(
             font-weight: 600;
             font-size: 14px;
         }
-        select, input[type="text"], input[type="password"] {
+        select, input[type="text"], input[type="password"], input[type="number"], textarea {
             width: 100%;
             padding: 15px;
             border: 2px solid #e0e0e0;
@@ -143,7 +175,24 @@ const char index_html[] PROGMEM = R"rawliteral(
             -webkit-appearance: none;
             appearance: none;
         }
-        select:focus, input:focus {
+        textarea {
+            font-family: monospace;
+            font-size: 12px;
+            min-height: 120px;
+            resize: vertical;
+        }
+        .checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: normal;
+        }
+        .hint {
+            margin-top: 6px;
+            color: #888;
+            font-size: 12px;
+        }
+        select:focus, input:focus, textarea:focus {
             outline: none;
             border-color: #667eea;
         }
@@ -222,8 +271,36 @@ const char index_html[] PROGMEM = R"rawliteral(
             </div>
             
             <div class="form-group">
-                <label for="mqtt">MQTT Broker IP</label>
-                <input type="text" id="mqtt" name="mqtt" placeholder="e.g., 192.168.1.100" required>
+                <label for="mqtt">MQTT Broker Host</label>
+                <input type="text" id="mqtt" name="mqtt" placeholder="e.g., broker.local" required>
+                <p class="hint">Must match the name in the broker's TLS certificate.</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="mqttPort">MQTT Port</label>
+                <input type="number" id="mqttPort" name="mqttPort" min="1" max="65535" value="8883">
+            </div>
+            
+            <div class="form-group">
+                <label for="mqttUser">MQTT Username</label>
+                <input type="text" id="mqttUser" name="mqttUser" placeholder="Enter username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="mqttPassword">MQTT Password</label>
+                <input type="password" id="mqttPassword" name="mqttPassword" placeholder="Enter password" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="mqttCa">Broker CA Certificate (PEM)</label>
+                <textarea id="mqttCa" name="mqttCa" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label class="checkbox">
+                    <input type="checkbox" id="mqttInsecure" name="mqttInsecure">
+                    Disable TLS (development only)
+                </label>
             </div>
             
             <button type="submit">Save & Connect</button>
@@ -233,12 +310,24 @@ const char index_html[] PROGMEM = R"rawliteral(
     </div>
     
     <script>
+        // Keep the port in step with the TLS choice unless the user typed a custom one
+        document.getElementById('mqttInsecure').addEventListener('change', function() {
+            const port = document.getElementById('mqttPort');
+            if (this.checked && port.value === '8883') port.value = '1883';
+            if (!this.checked && port.value === '1883') port.value = '8883';
+        });
+
         document.getElementById('configForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
             const ssid = document.getElementById('ssid').value;
             const password = document.getElementById('password').value;
             const mqttBroker = document.getElementById('mqtt').value;
+            const mqttPort = document.getElementById('mqttPort').value;
+            const mqttUser = document.getElementById('mqttUser').value;
+            const mqttPassword = document.getElementById('mqttPassword').value;
+            const mqttCa = document.getElementById('mqttCa').value.trim();
+            const mqttInsecure = document.getElementById('mqttInsecure').checked;
             
             if (!ssid) {
                 showStatus('Please enter a network name', 'error');
@@ -246,20 +335,33 @@ const char index_html[] PROGMEM = R"rawliteral(
             }
             
             if (!mqttBroker) {
-                showStatus('Please enter MQTT broker IP', 'error');
+                showStatus('Please enter MQTT broker host', 'error');
                 return;
             }
             
-            const formData = new FormData();
+            if (!mqttInsecure && !mqttCa) {
+                showStatus('Paste the broker CA certificate or disable TLS', 'error');
+                return;
+            }
+            
+            const formData = new URLSearchParams();
             formData.append('ssid', ssid);
             formData.append('password', password);
             formData.append('mqtt', mqttBroker);
+            formData.append('mqttPort', mqttPort);
+            formData.append('mqttUser', mqttUser);
+            formData.append('mqttPassword', mqttPassword);
+            formData.append('mqttCa', mqttCa);
+            formData.append('mqttInsecure', mqttInsecure ? '1' : '0');
             
             fetch('/save', {
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.text())
+            .then(response => response.text().then(text => {
+                if (!response.ok) throw new Error(text);
+                return text;
+            }))
             .then(result => {
                 showStatus('Settings saved! Rebooting...', 'success');
                 setTimeout(() => {
@@ -267,7 +369,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                 }, 2000);
             })
             .catch(err => {
-                showStatus('Save failed: ' + err, 'error');
+                showStatus('Save failed: ' + err.message, 'error');
             });
         });
         
@@ -298,6 +400,7 @@ void calibrateSensors();
 void detectDirection();
 void updateLED();
 void publishStatus();
+ReadingStatus readSensor(Adafruit_VL53L0X& sensor, int& distance);
 
 // ==================== SETUP ====================
 void setup() {
@@ -340,6 +443,12 @@ void setup() {
 void loop() {
     updateLED();
     
+    // Restart requested by the /save handler, delayed so the HTTP response reaches the browser
+    if (restartRequested && millis() - restartRequestedAt >= RESTART_DELAY) {
+        Serial.println("Restarting to apply new configuration...");
+        ESP.restart();
+    }
+    
     if (deviceMode == MODE_AP) {
         // AP mode - just handle web server (async)
         return;
@@ -374,13 +483,20 @@ void loadPreferences() {
     savedSSID = preferences.getString("ssid", "");
     savedPassword = preferences.getString("password", "");
     savedMqttBroker = preferences.getString("mqtt", "");
+    savedMqttPort = preferences.getUShort("mqtt_port", MQTT_PORT_TLS);
+    savedMqttUser = preferences.getString("mqtt_user", "");
+    savedMqttPassword = preferences.getString("mqtt_pass", "");
+    savedMqttCaCert = preferences.getString("mqtt_ca", "");
+    savedMqttInsecure = preferences.getBool("mqtt_insecure", false);
     thresholdFront = preferences.getInt("thresh_front", DEFAULT_THRESHOLD);
     thresholdBack = preferences.getInt("thresh_back", DEFAULT_THRESHOLD);
     preferences.end();
     
+    // Credentials and network names are deliberately not logged
     Serial.println("Loaded preferences:");
-    Serial.println("  SSID: " + savedSSID);
-    Serial.println("  MQTT: " + savedMqttBroker);
+    Serial.printf("  WiFi: %s\n", savedSSID.length() > 0 ? "configured" : "not configured");
+    Serial.printf("  MQTT: %s:%u (%s)\n", savedMqttBroker.c_str(), savedMqttPort,
+                  savedMqttInsecure ? "plain TCP" : "TLS");
     Serial.printf("  Thresholds: Front=%d, Back=%d\n", thresholdFront, thresholdBack);
 }
 
@@ -389,6 +505,11 @@ void savePreferences() {
     preferences.putString("ssid", savedSSID);
     preferences.putString("password", savedPassword);
     preferences.putString("mqtt", savedMqttBroker);
+    preferences.putUShort("mqtt_port", savedMqttPort);
+    preferences.putString("mqtt_user", savedMqttUser);
+    preferences.putString("mqtt_pass", savedMqttPassword);
+    preferences.putString("mqtt_ca", savedMqttCaCert);
+    preferences.putBool("mqtt_insecure", savedMqttInsecure);
     preferences.putInt("thresh_front", thresholdFront);
     preferences.putInt("thresh_back", thresholdBack);
     preferences.end();
@@ -426,7 +547,7 @@ void buildMqttTopics() {
 }
 
 bool connectToWiFi() {
-    Serial.println("Connecting to WiFi: " + savedSSID);
+    Serial.println("Connecting to WiFi...");
     
     WiFi.mode(WIFI_STA);
     WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
@@ -464,7 +585,7 @@ void startAPMode() {
     Serial.println("Starting AP mode...");
     
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID);
+    WiFi.softAP(AP_SSID, AP_PASSWORD);  // WPA2-PSK
     
     Serial.println("AP SSID: " + String(AP_SSID));
     Serial.println("AP IP: " + WiFi.softAPIP().toString());
@@ -476,30 +597,71 @@ void startAPMode() {
 void setupWebServer() {
     // Serve main page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send_P(200, "text/html", index_html);
+        request->send(200, "text/html", index_html);
     });
     
     // Save configuration endpoint
     server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (request->hasParam("ssid", true) && request->hasParam("mqtt", true)) {
-            savedSSID = request->getParam("ssid", true)->value();
-            savedPassword = request->getParam("password", true)->value();
-            savedMqttBroker = request->getParam("mqtt", true)->value();
-            
-            Serial.println("Received config:");
-            Serial.println("  SSID: " + savedSSID);
-            Serial.println("  MQTT: " + savedMqttBroker);
-            
-            savePreferences();
-            
-            request->send(200, "text/plain", "OK");
-            
-            // Reboot after a short delay
-            delay(1000);
-            ESP.restart();
-        } else {
-            request->send(400, "text/plain", "Missing parameters");
+        // Runs on the AsyncTCP task: no blocking calls here, the restart is done from loop()
+        if (restartRequested) {
+            request->send(409, "text/plain", "Already saved, restarting");
+            return;
         }
+        if (!request->hasParam("ssid", true) || !request->hasParam("mqtt", true)) {
+            request->send(400, "text/plain", "Missing parameters");
+            return;
+        }
+        
+        auto param = [request](const char* name) -> String {
+            return request->hasParam(name, true) ? request->getParam(name, true)->value() : String();
+        };
+        
+        String ssid = param("ssid");
+        String password = param("password");
+        String broker = param("mqtt");
+        long port = param("mqttPort").toInt();
+        String caCert = param("mqttCa");
+        bool insecure = param("mqttInsecure") == "1";
+        
+        if (ssid.length() == 0 || ssid.length() > 32) {
+            request->send(400, "text/plain", "SSID must be 1-32 characters");
+            return;
+        }
+        if (password.length() > 0 && (password.length() < 8 || password.length() > 63)) {
+            request->send(400, "text/plain", "WiFi password must be empty or 8-63 characters");
+            return;
+        }
+        if (broker.length() == 0) {
+            request->send(400, "text/plain", "MQTT broker is required");
+            return;
+        }
+        if (port == 0) {
+            port = insecure ? MQTT_PORT_PLAIN : MQTT_PORT_TLS;
+        } else if (port < 1 || port > 65535) {
+            request->send(400, "text/plain", "Invalid MQTT port");
+            return;
+        }
+        if (!insecure && caCert.indexOf("-----BEGIN CERTIFICATE-----") < 0) {
+            request->send(400, "text/plain", "A PEM CA certificate is required unless TLS is disabled");
+            return;
+        }
+        
+        savedSSID = ssid;
+        savedPassword = password;
+        savedMqttBroker = broker;
+        savedMqttPort = (uint16_t)port;
+        savedMqttUser = param("mqttUser");
+        savedMqttPassword = param("mqttPassword");
+        savedMqttCaCert = insecure ? String() : caCert;
+        savedMqttInsecure = insecure;
+        
+        Serial.println("Received new configuration");
+        savePreferences();
+        
+        request->send(200, "text/plain", "OK");
+        
+        restartRequestedAt = millis();
+        restartRequested = true;
     });
     
     server.begin();
@@ -508,48 +670,69 @@ void setupWebServer() {
 
 // ==================== MQTT ====================
 void setupMQTT() {
-    mqtt.setServer(savedMqttBroker.c_str(), MQTT_PORT);
+    if (savedMqttInsecure) {
+        Serial.println("WARNING: MQTT TLS disabled - traffic and credentials are sent in plain text");
+        mqtt.setClient(plainClient);
+    } else {
+        // savedMqttCaCert is a global, so the pointer stays valid for the client's lifetime
+        secureClient.setCACert(savedMqttCaCert.c_str());
+        mqtt.setClient(secureClient);
+    }
+    mqtt.setServer(savedMqttBroker.c_str(), savedMqttPort);
     mqtt.setCallback(mqttCallback);
     mqtt.setBufferSize(512);  // Increase buffer for JSON payloads
     reconnectMQTT();
 }
 
-void parseJsonCommand(const String& message) {
-    // Simple JSON parsing for commands
+int clampThreshold(int value) {
+    return constrain(value, MIN_THRESHOLD, MAX_THRESHOLD);
+}
+
+void publishCommandError(const char* error) {
+    JsonDocument doc;
+    doc["state"] = "command_failed";
+    doc["error"] = error;
+    String json;
+    serializeJson(doc, json);
+    mqtt.publish(topicStatus.c_str(), json.c_str());
+}
+
+void handleCommand(const byte* payload, unsigned int length) {
     // Expected format: {"action":"calibrate"} or {"action":"enableDistance","enabled":true}
     // or {"action":"updateSettings","payload":{"thresholdFront":400,"thresholdBack":400}}
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload, length);
+    if (err) {
+        Serial.printf("Invalid command JSON: %s\n", err.c_str());
+        publishCommandError("invalid_json");
+        return;
+    }
     
-    if (message.indexOf("\"calibrate\"") >= 0) {
+    const char* action = doc["action"] | "";
+    
+    if (strcmp(action, "calibrate") == 0) {
         calibrateSensors();
     }
-    else if (message.indexOf("\"enableDistance\"") >= 0) {
-        distanceStreamEnabled = message.indexOf("\"enabled\":true") >= 0 || 
-                                message.indexOf("\"enabled\": true") >= 0;
+    else if (strcmp(action, "enableDistance") == 0) {
+        if (!doc["enabled"].is<bool>()) {
+            publishCommandError("invalid_enabled");
+            return;
+        }
+        distanceStreamEnabled = doc["enabled"].as<bool>();
         Serial.printf("Distance streaming %s\n", distanceStreamEnabled ? "enabled" : "disabled");
     }
-    else if (message.indexOf("\"updateSettings\"") >= 0) {
-        // Parse threshold settings from payload
-        int frontIdx = message.indexOf("\"thresholdFront\":");
-        int backIdx = message.indexOf("\"thresholdBack\":");
-        
-        if (frontIdx >= 0) {
-            int start = frontIdx + 17;
-            int end = message.indexOf(",", start);
-            if (end < 0) end = message.indexOf("}", start);
-            if (end > start) {
-                thresholdFront = message.substring(start, end).toInt();
-                if (thresholdFront < 50) thresholdFront = 50;
-            }
+    else if (strcmp(action, "updateSettings") == 0) {
+        JsonObjectConst settings = doc["payload"];
+        if (settings.isNull()) {
+            publishCommandError("missing_payload");
+            return;
         }
         
-        if (backIdx >= 0) {
-            int start = backIdx + 16;
-            int end = message.indexOf(",", start);
-            if (end < 0) end = message.indexOf("}", start);
-            if (end > start) {
-                thresholdBack = message.substring(start, end).toInt();
-                if (thresholdBack < 50) thresholdBack = 50;
-            }
+        if (settings["thresholdFront"].is<int>()) {
+            thresholdFront = clampThreshold(settings["thresholdFront"].as<int>());
+        }
+        if (settings["thresholdBack"].is<int>()) {
+            thresholdBack = clampThreshold(settings["thresholdBack"].as<int>());
         }
         
         savePreferences();
@@ -560,18 +743,17 @@ void parseJsonCommand(const String& message) {
                             String(thresholdFront) + ",\"back\":" + String(thresholdBack) + "}}";
         mqtt.publish(topicStatus.c_str(), statusJson.c_str());
     }
+    else {
+        Serial.printf("Unknown command action: '%s'\n", action);
+        publishCommandError("unknown_action");
+    }
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-    String message = "";
-    for (unsigned int i = 0; i < length; i++) {
-        message += (char)payload[i];
-    }
+    Serial.printf("MQTT message [%s]: %.*s\n", topic, (int)length, (const char*)payload);
     
-    Serial.printf("MQTT message [%s]: %s\n", topic, message.c_str());
-    
-    if (String(topic) == topicCommand) {
-        parseJsonCommand(message);
+    if (topicCommand == topic) {
+        handleCommand(payload, length);
     }
 }
 
@@ -585,7 +767,10 @@ void reconnectMQTT() {
     Serial.println("Attempting MQTT connection...");
     
     String clientId = "ToF-" + deviceMac;
-    if (mqtt.connect(clientId.c_str())) {
+    bool connected = savedMqttUser.length() > 0
+        ? mqtt.connect(clientId.c_str(), savedMqttUser.c_str(), savedMqttPassword.c_str())
+        : mqtt.connect(clientId.c_str());
+    if (connected) {
         Serial.println("MQTT connected");
         
         // Subscribe to command topic
@@ -631,6 +816,41 @@ void initSensors() {
     Serial.println("All sensors initialized successfully");
 }
 
+// Samples collected for one sensor during calibration
+struct CalibrationSamples {
+    long sum = 0;
+    int valid = 0;
+    int outOfRange = 0;
+    
+    void add(ReadingStatus status, int distance) {
+        // Only good-quality readings go into the average; poor and failed readings are ignored
+        if (status == READING_VALID) {
+            sum += distance;
+            valid++;
+        } else if (status == READING_OUT_OF_RANGE) {
+            outOfRange++;
+        }
+    }
+};
+
+// Derives a threshold from the samples. Returns nullptr on success, otherwise an error code.
+const char* computeThreshold(const CalibrationSamples& samples, int& threshold) {
+    if (samples.valid >= CALIBRATION_MIN_VALID) {
+        int candidate = samples.sum / samples.valid - CALIBRATION_MARGIN;
+        // Clamping up to MIN_THRESHOLD would put the threshold at or beyond the background,
+        // leaving the sensor permanently triggered
+        if (candidate < MIN_THRESHOLD) return "too_close";
+        threshold = clampThreshold(candidate);
+        return nullptr;
+    }
+    if (samples.outOfRange >= CALIBRATION_MIN_VALID) {
+        // Nothing in view (open passage beyond sensor range): anything that comes into range triggers
+        threshold = MAX_THRESHOLD;
+        return nullptr;
+    }
+    return "invalid_readings";
+}
+
 void calibrateSensors() {
     if (!sensorsInitialized) {
         Serial.println("Cannot calibrate - sensors not initialized");
@@ -642,42 +862,27 @@ void calibrateSensors() {
     Serial.println("Starting calibration...");
     mqtt.publish(topicStatus.c_str(), "{\"state\":\"calibrating\"}");
     
-    long sumFront = 0;
-    long sumBack = 0;
-    int validFront = 0;
-    int validBack = 0;
+    CalibrationSamples front, back;
     
     for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
-        VL53L0X_RangingMeasurementData_t measureFront;
-        VL53L0X_RangingMeasurementData_t measureBack;
-        
-        sensorFront.rangingTest(&measureFront, false);
-        sensorBack.rangingTest(&measureBack, false);
-        
-        // Use 9999 as max distance if reading is out of range
-        int distFront = (measureFront.RangeStatus != 4) ? measureFront.RangeMilliMeter : 9999;
-        int distBack = (measureBack.RangeStatus != 4) ? measureBack.RangeMilliMeter : 9999;
-        
-        sumFront += distFront;
-        validFront++;
-        
-        sumBack += distBack;
-        validBack++;
-        
+        int distFront, distBack;
+        ReadingStatus statusFront = readSensor(sensorFront, distFront);
+        ReadingStatus statusBack = readSensor(sensorBack, distBack);
+        front.add(statusFront, distFront);
+        back.add(statusBack, distBack);
         delay(50);
     }
     
-    if (validFront > 0 && validBack > 0) {
-        int avgFront = sumFront / validFront;
-        int avgBack = sumBack / validBack;
-        
-        thresholdFront = avgFront - CALIBRATION_MARGIN;
-        thresholdBack = avgBack - CALIBRATION_MARGIN;
-        
-        // Ensure thresholds are not negative
-        if (thresholdFront < 50) thresholdFront = 50;
-        if (thresholdBack < 50) thresholdBack = 50;
-        
+    Serial.printf("Calibration samples: front %d valid/%d out of range, back %d valid/%d out of range (of %d)\n",
+                  front.valid, front.outOfRange, back.valid, back.outOfRange, CALIBRATION_SAMPLES);
+    
+    int newFront, newBack;
+    const char* errorFront = computeThreshold(front, newFront);
+    const char* errorBack = computeThreshold(back, newBack);
+    
+    if (!errorFront && !errorBack) {
+        thresholdFront = newFront;
+        thresholdBack = newBack;
         savePreferences();
         
         Serial.printf("Calibration complete: Front=%dmm, Back=%dmm\n", thresholdFront, thresholdBack);
@@ -686,10 +891,33 @@ void calibrateSensors() {
                             String(thresholdFront) + ",\"back\":" + String(thresholdBack) + "}}";
         mqtt.publish(topicStatus.c_str(), statusJson.c_str());
     } else {
-        Serial.println("Calibration failed - not enough valid readings");
-        String errorJson = "{\"state\":\"calibration_failed\",\"error\":\"invalid_readings\"}";
+        // Thresholds are left unchanged
+        const char* sensor = errorFront ? "front" : "back";
+        const char* error = errorFront ? errorFront : errorBack;
+        Serial.printf("Calibration failed - %s sensor: %s\n", sensor, error);
+        String errorJson = "{\"state\":\"calibration_failed\",\"error\":\"" + String(error) +
+                           "\",\"sensor\":\"" + sensor + "\",\"valid\":{\"front\":" +
+                           String(front.valid) + ",\"back\":" + String(back.valid) + "}}";
         mqtt.publish(topicStatus.c_str(), errorJson.c_str());
     }
+    
+    // Calibration blocks for ~1 s; don't resume a half-finished detection afterwards
+    detectionState = IDLE;
+}
+
+// Takes one measurement. For READING_OUT_OF_RANGE and READING_ERROR, distance is set to DIST_OUT_OF_RANGE.
+ReadingStatus readSensor(Adafruit_VL53L0X& sensor, int& distance) {
+    VL53L0X_RangingMeasurementData_t measure = {};
+    if (sensor.rangingTest(&measure, false) != VL53L0X_ERROR_NONE) {
+        distance = DIST_OUT_OF_RANGE;
+        return READING_ERROR;
+    }
+    if (measure.RangeStatus == 4 || measure.RangeMilliMeter >= 8190) {
+        distance = DIST_OUT_OF_RANGE;
+        return READING_OUT_OF_RANGE;
+    }
+    distance = measure.RangeMilliMeter;
+    return measure.RangeStatus == 0 ? READING_VALID : READING_POOR;
 }
 
 // ==================== STATUS PUBLISHING ====================
@@ -709,18 +937,15 @@ void publishStatus() {
 
 // ==================== DIRECTION DETECTION ====================
 void detectDirection() {
-    VL53L0X_RangingMeasurementData_t measureFront;
-    VL53L0X_RangingMeasurementData_t measureBack;
+    int distFront, distBack;
+    // Poor-quality readings still count for detection (e.g. dark clothing gives a weak signal)
+    ReadingStatus statusFront = readSensor(sensorFront, distFront);
+    ReadingStatus statusBack = readSensor(sensorBack, distBack);
+    bool validFront = statusFront == READING_VALID || statusFront == READING_POOR;
+    bool validBack = statusBack == READING_VALID || statusBack == READING_POOR;
     
-    sensorFront.rangingTest(&measureFront, false);
-    sensorBack.rangingTest(&measureBack, false);
-    
-    // Use 9999 as max distance if reading is out of range
-    int distFront = (measureFront.RangeStatus != 4) ? measureFront.RangeMilliMeter : 9999;
-    int distBack = (measureBack.RangeStatus != 4) ? measureBack.RangeMilliMeter : 9999;
-    
-    bool frontTriggered = (measureFront.RangeStatus != 4) && (distFront < thresholdFront);
-    bool backTriggered = (measureBack.RangeStatus != 4) && (distBack < thresholdBack);
+    bool frontTriggered = validFront && (distFront < thresholdFront);
+    bool backTriggered = validBack && (distBack < thresholdBack);
     
     unsigned long now = millis();
     unsigned long elapsed = now - detectionStartTime;
