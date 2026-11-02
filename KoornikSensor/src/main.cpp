@@ -20,7 +20,6 @@
 
 // ==================== CONFIGURATION ====================
 #define AP_SSID "ToF-Setup"
-// AP_PASSWORD is injected at build time from the KOORNIK_AP_PASSWORD environment variable (see platformio.ini)
 #ifndef AP_PASSWORD
 #error "AP_PASSWORD is not defined - set KOORNIK_AP_PASSWORD before building"
 #endif
@@ -108,7 +107,6 @@ bool ledState = false;
 bool sensorsInitialized = false;
 bool distanceStreamEnabled = false;
 
-// Set by the async web handler; the restart itself happens in loop()
 volatile bool restartRequested = false;
 unsigned long restartRequestedAt = 0;
 
@@ -310,7 +308,6 @@ const char index_html[] PROGMEM = R"rawliteral(
     </div>
     
     <script>
-        // Keep the port in step with the TLS choice unless the user typed a custom one
         document.getElementById('mqttInsecure').addEventListener('change', function() {
             const port = document.getElementById('mqttPort');
             if (this.checked && port.value === '8883') port.value = '1883';
@@ -443,7 +440,6 @@ void setup() {
 void loop() {
     updateLED();
     
-    // Restart requested by the /save handler, delayed so the HTTP response reaches the browser
     if (restartRequested && millis() - restartRequestedAt >= RESTART_DELAY) {
         Serial.println("Restarting to apply new configuration...");
         ESP.restart();
@@ -492,7 +488,7 @@ void loadPreferences() {
     thresholdBack = preferences.getInt("thresh_back", DEFAULT_THRESHOLD);
     preferences.end();
     
-    // Credentials and network names are deliberately not logged
+    // Don't log the SSID or any credentials
     Serial.println("Loaded preferences:");
     Serial.printf("  WiFi: %s\n", savedSSID.length() > 0 ? "configured" : "not configured");
     Serial.printf("  MQTT: %s:%u (%s)\n", savedMqttBroker.c_str(), savedMqttPort,
@@ -585,7 +581,7 @@ void startAPMode() {
     Serial.println("Starting AP mode...");
     
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID, AP_PASSWORD);  // WPA2-PSK
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
     
     Serial.println("AP SSID: " + String(AP_SSID));
     Serial.println("AP IP: " + WiFi.softAPIP().toString());
@@ -602,7 +598,7 @@ void setupWebServer() {
     
     // Save configuration endpoint
     server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request) {
-        // Runs on the AsyncTCP task: no blocking calls here, the restart is done from loop()
+        // Runs on the AsyncTCP task and must not block, so the restart happens in loop()
         if (restartRequested) {
             request->send(409, "text/plain", "Already saved, restarting");
             return;
@@ -816,14 +812,12 @@ void initSensors() {
     Serial.println("All sensors initialized successfully");
 }
 
-// Samples collected for one sensor during calibration
 struct CalibrationSamples {
     long sum = 0;
     int valid = 0;
     int outOfRange = 0;
     
     void add(ReadingStatus status, int distance) {
-        // Only good-quality readings go into the average; poor and failed readings are ignored
         if (status == READING_VALID) {
             sum += distance;
             valid++;
@@ -833,7 +827,7 @@ struct CalibrationSamples {
     }
 };
 
-// Derives a threshold from the samples. Returns nullptr on success, otherwise an error code.
+// Returns nullptr on success, otherwise an error code
 const char* computeThreshold(const CalibrationSamples& samples, int& threshold) {
     if (samples.valid >= CALIBRATION_MIN_VALID) {
         int candidate = samples.sum / samples.valid - CALIBRATION_MARGIN;
@@ -844,7 +838,7 @@ const char* computeThreshold(const CalibrationSamples& samples, int& threshold) 
         return nullptr;
     }
     if (samples.outOfRange >= CALIBRATION_MIN_VALID) {
-        // Nothing in view (open passage beyond sensor range): anything that comes into range triggers
+        // Open passage beyond sensor range: anything that comes into range triggers
         threshold = MAX_THRESHOLD;
         return nullptr;
     }
@@ -891,7 +885,6 @@ void calibrateSensors() {
                             String(thresholdFront) + ",\"back\":" + String(thresholdBack) + "}}";
         mqtt.publish(topicStatus.c_str(), statusJson.c_str());
     } else {
-        // Thresholds are left unchanged
         const char* sensor = errorFront ? "front" : "back";
         const char* error = errorFront ? errorFront : errorBack;
         Serial.printf("Calibration failed - %s sensor: %s\n", sensor, error);
